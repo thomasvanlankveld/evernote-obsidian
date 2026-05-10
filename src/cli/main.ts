@@ -3,6 +3,7 @@
  */
 import { resolve } from 'node:path';
 import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
+import { readCliPackageVersion } from './packageVersion.ts';
 
 export interface MainStreams {
   stdout: NodeJS.WritableStream;
@@ -26,29 +27,41 @@ export async function main(
   }
 
   if (cmd === 'index') {
-    return runIndex(resolveVaultRoot(rest), streams);
+    const parsed = parseVaultRootForIndex(rest);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runIndex(parsed.path, streams);
   }
 
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);
   return 2;
 }
 
-function resolveVaultRoot(args: readonly string[]): string {
+function parseVaultRootForIndex(
+  args: readonly string[],
+): { ok: true; path: string } | { ok: false; message: string } {
   const defaultData = resolve(process.cwd(), 'data');
+  let explicit: string | undefined;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--vault') {
       const v = args[i + 1];
       if (v === undefined || v.startsWith('-')) {
-        return defaultData;
+        return { ok: false, message: 'error: --vault requires a path (e.g. --vault ./data)' };
       }
-      return resolve(process.cwd(), v);
-    }
-    if (a?.startsWith('--vault=')) {
-      return resolve(process.cwd(), a.slice('--vault='.length));
+      explicit = resolve(process.cwd(), v);
+      i++;
+    } else if (a?.startsWith('--vault=')) {
+      const tail = a.slice('--vault='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --vault= requires a non-empty path' };
+      }
+      explicit = resolve(process.cwd(), tail);
     }
   }
-  return defaultData;
+  return { ok: true, path: explicit ?? defaultData };
 }
 
 async function runIndex(vaultRoot: string, streams: MainStreams): Promise<number> {
@@ -69,7 +82,9 @@ async function runIndex(vaultRoot: string, streams: MainStreams): Promise<number
       streams.stderr.write(`${e.message}\n`);
       return 2;
     }
-    throw e;
+    const msg = e instanceof Error ? e.message : String(e);
+    streams.stderr.write(`index: ${msg}\n`);
+    return 2;
   }
 }
 
@@ -91,5 +106,5 @@ function usage(): string {
 }
 
 function version(): string {
-  return '0.0.0';
+  return readCliPackageVersion();
 }

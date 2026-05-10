@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,10 @@ describe('normalizeTitle', () => {
     assert.equal(normalizeTitle('  Hello \t World  '), 'hello world');
     const nfdCoffee = `caf\u0065\u0301`; // e + combining acute
     assert.equal(normalizeTitle(nfdCoffee), normalizeTitle('caf\u00E9'));
+  });
+
+  it('returns empty when the title is only whitespace', () => {
+    assert.equal(normalizeTitle('   \t  '), '');
   });
 });
 
@@ -70,6 +74,24 @@ describe('buildVaultIndex', () => {
       (e: unknown) => e instanceof VaultIndexRootError,
     );
   });
+
+  it('fails when a note has an empty normalized title', async () => {
+    const root = join(here, '__fixtures__', 'temp-empty-title');
+    await rm(root, { recursive: true, force: true });
+    await mkdir(root, { recursive: true });
+    await writeFile(join(root, ' .md'), '# body\n', 'utf8');
+
+    try {
+      const r = await buildVaultIndex(root);
+      assert.equal(r.ok, false);
+      if (r.ok) {
+        return;
+      }
+      assert.deepEqual(r.collisions, [{ normalizedTitle: '', paths: [' .md'] }]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('buildVaultIndex temp dir', () => {
@@ -92,6 +114,33 @@ describe('buildVaultIndex temp dir', () => {
       assert.equal(r.entries[0]?.path, 'visible.md');
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not recurse into symlinked directories', async (t) => {
+    if (process.platform === 'win32') {
+      t.skip('directory symlinks differ on Windows without dev mode');
+      return;
+    }
+    const vault = join(here, '__fixtures__', 'temp-symlink-dir');
+    const outside = join(here, '__fixtures__', 'temp-symlink-target');
+    await rm(vault, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+    await mkdir(join(outside, 'sub'), { recursive: true });
+    await writeFile(join(outside, 'sub', 'only-here.md'), '#\n', 'utf8');
+    await mkdir(vault, { recursive: true });
+    await symlink(join(outside, 'sub'), join(vault, 'link'), 'dir');
+
+    try {
+      const r = await buildVaultIndex(vault);
+      assert.equal(r.ok, true);
+      if (!r.ok) {
+        return;
+      }
+      assert.equal(r.entries.length, 0);
+    } finally {
+      await rm(vault, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 });

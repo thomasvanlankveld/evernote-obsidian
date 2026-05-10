@@ -30,6 +30,8 @@ export function normalizeTitle(raw: string): string {
 
 /**
  * If the file starts with YAML frontmatter, return the `title:` value when present.
+ * v1 is a **line-based subset** only: first `title:` line with a simple scalar (optional
+ * single-line quotes). Not a full YAML parser (no block scalars, aliases, or other keys).
  */
 export function parseFrontmatterTitle(content: string): string | undefined {
   const start = content.startsWith('\uFEFF') ? content.slice(1) : content;
@@ -69,6 +71,9 @@ async function collectMarkdownFiles(dir: string, vaultRoot: string): Promise<str
       const name = String(ent.name);
       const full = join(dir, name);
       if (ent.isDirectory()) {
+        if (ent.isSymbolicLink()) {
+          continue;
+        }
         if (SKIP_DIR_NAMES.has(name)) {
           continue;
         }
@@ -106,7 +111,9 @@ function stemFromFilename(filename: string): string {
 
 /**
  * Walk `vaultRoot`, read Markdown titles (frontmatter `title` or filename stem), and build
- * an unambiguous index keyed by {@link normalizeTitle}. Duplicate normalized titles yield `ok: false`.
+ * an unambiguous index keyed by {@link normalizeTitle}. Duplicate normalized titles, or any
+ * **empty** normalized title, yield `ok: false` with collision-shaped reports.
+ * Does not recurse into **symlinked directories** (avoids cycles); symlinked `.md` files are still indexed.
  */
 export async function buildVaultIndex(vaultRoot: string): Promise<VaultIndexResult> {
   const absoluteFiles = await collectMarkdownFiles(vaultRoot, vaultRoot);
@@ -135,7 +142,7 @@ export async function buildVaultIndex(vaultRoot: string): Promise<VaultIndexResu
 
   const collisions: VaultIndexCollision[] = [];
   for (const [normalizedTitle, paths] of byNorm) {
-    if (paths.length > 1) {
+    if (paths.length > 1 || normalizedTitle === '') {
       collisions.push({ normalizedTitle, paths: [...paths].sort() });
     }
   }

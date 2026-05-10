@@ -80,4 +80,33 @@ describe('cli main', () => {
     assert.equal(j.ok, false);
     assert.equal(j.collisions.length, 1);
   });
+
+  it('index exits 2 when --vault has no path', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['index', '--vault'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--vault requires a path/);
+  });
+
+  it('index exits 2 when --vault is followed by another flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['index', '--vault', '--help'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--vault requires a path/);
+  });
+
+  it('index exits 2 when --vault= has empty value', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['index', '--vault='], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--vault=/);
+  });
+
+  it('index exits 2 when vault root is not a directory', async () => {
+    const { streams, err } = makeStreams();
+    const fileVault = join(cliDir, '../vault/__fixtures__/unique/first.md');
+    const code = await main(['index', '--vault', fileVault], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /^index: /);
+  });
 });
