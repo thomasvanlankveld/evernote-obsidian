@@ -3,15 +3,30 @@
   "private": true,
   "license": "MIT",
   "description": "Tools for migrating Evernote → Obsidian with usable internal links",
+  "type": "module",
   "engines": {
     "node": ">=24"
   },
+  "bin": {
+    "evernote-obsidian": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsc",
+    "dev": "node --watch src/cli.ts",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "node --test 'src/**/*.test.ts'",
     "prepare": "husky"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
     "@commitlint/cli": "^20.0.0",
     "@commitlint/config-conventional": "^20.0.0",
-    "husky": "^9.1.7"
+    "@types/node": "^24.0.0",
+    "husky": "^9.1.7",
+    "typescript": "^5.7.0"
   }
 }
