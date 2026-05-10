@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-10 (Phase 3 complete)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -62,9 +62,16 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 ### Phase 3 — Evernote metadata (API only)
 
-- Authenticate, list/fetch notes (GUID, title, updated), persist **gitignored JSON snapshot** for idempotent reruns and rate limits.
+- [x] Authenticate, list/fetch notes (GUID, title, updated), persist **gitignored JSON snapshot** for idempotent reruns and rate limits.
 
-**Deliverable:** `NoteRecord[]` + redacted fixture tests.
+**Deliverable:** `NoteRecord[]` + redacted fixture tests. ✅
+
+**Phase 3 implementation notes**
+
+- **Auth:** `EVERNOTE_DEVELOPER_TOKEN` (required for `snapshot`); optional `EVERNOTE_HOST` (`www.evernote.com`, `sandbox.evernote.com`, or `app.yinxiang.com` / Yinxiang).
+- **Transport:** Official npm package `evernote` (Thrift NoteStore); paginated `findNotesMetadata` (default page size 250, optional `--sleep-ms` between pages).
+- **CLI:** `evernote-obsidian snapshot [--out <path>]` — default snapshot path **`./out/evernote-notes.json`** (repo already gitignores `/out/`). Loads **`.env` from cwd** when present without overriding already-set environment variables.
+- **On-disk shape:** `{ version: 1, writtenAt, host, notes: NoteRecord[] }` where each `NoteRecord` is `{ guid, title, updated }` and `updated` is ISO 8601 UTC from Evernote’s `updated` ms value.
 
 ### Phase 4 — Link extraction
 

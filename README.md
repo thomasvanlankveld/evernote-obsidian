@@ -13,6 +13,25 @@ A complementary approach is to use **Evernote’s API** (or other metadata sourc
 - [nvm](https://github.com/nvm-sh/nvm) (or another Node version manager you prefer)
 - Node **24** (see `.nvmrc`)
 
+## Commands (implemented so far)
+
+After `npm install` and `npm run build`, the `evernote-obsidian` CLI is available (see `package.json` `bin`).
+
+- **`evernote-obsidian index [--vault <path>]`** — Walk the vault (default `./data`) and report whether normalized titles are unique enough for correlation.
+- **`evernote-obsidian snapshot [--out <path>] [--page-size <n>] [--sleep-ms <n>]`** — Call Evernote’s API and write a JSON snapshot of note metadata (GUID, title, last updated). Default output: `./out/evernote-notes.json` (the `out/` directory is gitignored).
+
+Copy `.env.example` to `.env` and set **`EVERNOTE_DEVELOPER_TOKEN`** before `snapshot`. Optional **`EVERNOTE_HOST`** selects production (`www.evernote.com`), sandbox, or Yinxiang (`app.yinxiang.com`).
+
+## Evernote snapshot: limits
+
+These boundaries are intentional for an early, personal migration tool; they are not a full Evernote client.
+
+- **Authentication:** Only **`EVERNOTE_DEVELOPER_TOKEN`** is supported today. **OAuth** and other flows are not implemented in this repo yet.
+- **Account scope:** Metadata is read from the **primary personal NoteStore** returned for that token. **Evernote Business** and other secondary stores are not separately enumerated in this phase.
+- **What is fetched:** **Metadata only** (GUID, title, `updated` timestamp)—not full note bodies or resources. Pagination uses Evernote’s `findNotesMetadata`; use **`--sleep-ms`** if you hit rate limits.
+- **SDK:** The npm package **`evernote`** is Evernote’s official JavaScript SDK around the Thrift API; it is **maintenance-frozen** upstream. If Evernote changes or restricts the classic API, this path may need revisiting.
+- **Evernote policy:** Access via developer tokens is subject to Evernote’s own product and developer policies; if tokens are unavailable for your account, you will need another metadata source (not covered here yet).
+
 ## Restoring `data/` on a new machine
 
 `data/` is not in git. Copy your vault snapshot or re-import from Evernote into `data/` locally, or symlink it to your real Obsidian vault folder if that fits your workflow.
@@ -20,11 +39,11 @@ A complementary approach is to use **Evernote’s API** (or other metadata sourc
 ## Security
 
 - Never commit Evernote developer tokens or `.enex` files that contain private notes unless this repo is strictly private and you accept the risk.
-- Prefer environment variables or a local `.env` (gitignored) for credentials; add `.env.example` later if you document required variables.
+- Prefer environment variables or a local `.env` (gitignored) for credentials; see **`.env.example`** for variable names used by the CLI.
 
 ## Next steps (for later implementation)
 
-Rough direction only: authenticate to Evernote, list or fetch notes with stable IDs, correlate with imported Markdown (by title, ENML hash, or exported sidecar metadata), produce a link map, then rewrite `evernote:///…` (and any other patterns) to `[[wikilinks]]` or Markdown links that match your vault layout.
+Rough direction only: correlate snapshot metadata with imported Markdown (by title, optional overrides, or other sidecars), produce a link map, then rewrite `evernote:///…` (and shard URLs) to `[[wikilinks]]` or Markdown links that match your vault layout. See [docs/edds/2026-05-10-evernote-obsidian-migration.edd.md](docs/edds/2026-05-10-evernote-obsidian-migration.edd.md) for phased detail.
 
 ## Context
 
