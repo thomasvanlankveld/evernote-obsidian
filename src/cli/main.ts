@@ -1,18 +1,19 @@
 /**
- * Minimal CLI entrypoint for the Evernote → Obsidian link-repair pipeline.
- * Phase 1 ships only the scaffold: argument parsing and subcommand routing
- * arrive in later phases.
+ * CLI entrypoint for the Evernote → Obsidian link-repair pipeline.
  */
+import { resolve } from 'node:path';
+import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
+
 export interface MainStreams {
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
 }
 
-export function main(
+export async function main(
   argv: readonly string[],
   streams: MainStreams = { stdout: process.stdout, stderr: process.stderr },
-): number {
-  const [cmd] = argv;
+): Promise<number> {
+  const [cmd, ...rest] = argv;
 
   if (cmd === undefined || cmd === '--help' || cmd === '-h') {
     streams.stdout.write(usage());
@@ -24,8 +25,52 @@ export function main(
     return 0;
   }
 
+  if (cmd === 'index') {
+    return runIndex(resolveVaultRoot(rest), streams);
+  }
+
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);
   return 2;
+}
+
+function resolveVaultRoot(args: readonly string[]): string {
+  const defaultData = resolve(process.cwd(), 'data');
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--vault') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return defaultData;
+      }
+      return resolve(process.cwd(), v);
+    }
+    if (a?.startsWith('--vault=')) {
+      return resolve(process.cwd(), a.slice('--vault='.length));
+    }
+  }
+  return defaultData;
+}
+
+async function runIndex(vaultRoot: string, streams: MainStreams): Promise<number> {
+  try {
+    const result = await buildVaultIndex(vaultRoot);
+    if (!result.ok) {
+      streams.stderr.write(
+        `${JSON.stringify({ ok: false, collisions: result.collisions }, null, 2)}\n`,
+      );
+      return 1;
+    }
+    streams.stdout.write(
+      `${JSON.stringify({ ok: true, vault: vaultRoot, count: result.entries.length }, null, 2)}\n`,
+    );
+    return 0;
+  } catch (e) {
+    if (e instanceof VaultIndexRootError) {
+      streams.stderr.write(`${e.message}\n`);
+      return 2;
+    }
+    throw e;
+  }
 }
 
 function usage(): string {
@@ -34,8 +79,13 @@ function usage(): string {
     '',
     'Usage:',
     '  evernote-obsidian [--help|--version]',
+    '  evernote-obsidian index [--vault <path>]',
     '',
-    'Commands land in later phases (vault index, metadata, extract, correlate, rewrite).',
+    'Commands:',
+    '  index   Build a read-only vault index (normalized titles must be unique).',
+    '',
+    'Options:',
+    '  --vault   Vault root directory (default: ./data relative to cwd)',
     '',
   ].join('\n');
 }

@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { type MainStreams, main } from './main.ts';
+
+const cliDir = dirname(fileURLToPath(import.meta.url));
+const uniqueFixtureVault = join(cliDir, '../vault/__fixtures__/unique');
+const collisionFixtureVault = join(cliDir, '../vault/__fixtures__/collision');
 
 function makeStreams(): { streams: MainStreams; out: () => string; err: () => string } {
   const outChunks: Buffer[] = [];
@@ -26,32 +32,52 @@ function makeStreams(): { streams: MainStreams; out: () => string; err: () => st
 }
 
 describe('cli main', () => {
-  it('prints usage and exits 0 with no arguments', () => {
+  it('prints usage and exits 0 with no arguments', async () => {
     const { streams, out, err } = makeStreams();
-    const code = main([], streams);
+    const code = await main([], streams);
     assert.equal(code, 0);
     assert.match(out(), /Usage:/);
     assert.equal(err(), '');
   });
 
-  it('prints usage and exits 0 with --help', () => {
+  it('prints usage and exits 0 with --help', async () => {
     const { streams, out } = makeStreams();
-    const code = main(['--help'], streams);
+    const code = await main(['--help'], streams);
     assert.equal(code, 0);
     assert.match(out(), /Usage:/);
   });
 
-  it('prints version and exits 0 with --version', () => {
+  it('prints version and exits 0 with --version', async () => {
     const { streams, out } = makeStreams();
-    const code = main(['--version'], streams);
+    const code = await main(['--version'], streams);
     assert.equal(code, 0);
     assert.match(out(), /^\d+\.\d+\.\d+/);
   });
 
-  it('exits 2 with unknown command', () => {
+  it('exits 2 with unknown command', async () => {
     const { streams, err } = makeStreams();
-    const code = main(['mystery'], streams);
+    const code = await main(['mystery'], streams);
     assert.equal(code, 2);
     assert.match(err(), /Unknown command: mystery/);
+  });
+
+  it('index exits 0 and prints JSON for a unique vault', async () => {
+    const { streams, out, err } = makeStreams();
+    const code = await main(['index', '--vault', uniqueFixtureVault], streams);
+    assert.equal(code, 0);
+    assert.equal(err(), '');
+    const j = JSON.parse(out()) as { ok: boolean; count: number };
+    assert.equal(j.ok, true);
+    assert.equal(j.count, 3);
+  });
+
+  it('index exits 1 with collisions JSON on stderr', async () => {
+    const { streams, out, err } = makeStreams();
+    const code = await main(['index', '--vault', collisionFixtureVault], streams);
+    assert.equal(code, 1);
+    assert.equal(out(), '');
+    const j = JSON.parse(err()) as { ok: boolean; collisions: unknown[] };
+    assert.equal(j.ok, false);
+    assert.equal(j.collisions.length, 1);
   });
 });

@@ -3,6 +3,10 @@
 **Status:** Draft  
 **Last updated:** 2026-05-10
 
+### EDD phase completion (before you push / open a PR)
+
+When implementation for a phase is done on your branch: run **`npm test`** (and **`npm run build`** / **`npm run lint`** if you touched code), then in **this EDD** tick that phase’s checkbox(es) and bump **Last updated** if the plan changed. Keep EDD edits in the **same branch** as the code so reviewers see intent and execution together.
+
 ## 1. Context
 
 Exporting Evernote to `.enex` and importing with Obsidian’s Importer preserves content but often leaves **internal links** as **`evernote://…`** URLs or **`https://www.evernote.com/shard/…`** web links. Importers lack stable crosswalk from those URLs to the Markdown files actually created ([obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306)).
@@ -35,18 +39,18 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 ### Phase 1 — Scaffold
 
-- **TypeScript**, compile to **`dist/`**, **Node ESM**; `src/`, CLI entry (`package.json` `bin` or `node dist/cli.js`); optional `tsx` for local dev.
-- Scripts: `build`, `lint`, `test`, `dev`.
-- `.env.example` for credentials; align `.gitignore` with build dirs (`/dist/`, `/out/`, reports if written under repo).
+- [x] **TypeScript**, compile to **`dist/`**, **Node ESM**; `src/`, CLI entry (`package.json` `bin` or `node dist/cli.js`); optional `tsx` for local dev.
+- [x] Scripts: `build`, `lint`, `test`, `dev`.
+- [x] `.env.example` for credentials; align `.gitignore` with build dirs (`/dist/`, `/out/`, reports if written under repo).
 
 ### Phase 2 — Vault index (read-only)
 
-- Walk configurable vault root; **CLI default** is **`./data`** (cwd-relative), overridable with **`--vault`**.
-- Index Markdown files: path, **normalized title** from filename and optional YAML frontmatter.
-- **Correlation key (v1):** normalized **title** only; optional later: frontmatter such as `evernote-guid:` if a preprocessor adds it.
-- **Duplicate titles:** **fail** with a report listing collisions; user supplies **override** rows (CSV/JSON) until the map is unambiguous — **no** silent first-wins.
+- [x] Walk configurable vault root; **CLI default** is **`./data`** (cwd-relative), overridable with **`--vault`** (`evernote-obsidian index`).
+- [x] Index Markdown files: path, **normalized title** from filename and optional YAML frontmatter (`title:`).
+- [x] **Correlation key (v1):** normalized **title** only; optional later: frontmatter such as `evernote-guid:` if a preprocessor adds it.
+- [x] **Duplicate titles:** **fail** with a report listing collisions — **no** silent first-wins (overrides land in a later phase).
 
-**Deliverable:** `buildVaultIndex(root)` + fixture tests.
+**Deliverable:** `buildVaultIndex(root)` + fixture tests. ✅
 
 ### Phase 3 — Evernote metadata (API only)
 
