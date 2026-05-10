@@ -98,4 +98,4 @@ This project adds automation: **correlate Evernote note identity → vault file*
 - [Import from Evernote – Obsidian Help](https://obsidian.md/help/import/evernote)
 - [obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306)
 - Repo README: `/README.md`
-- EDDs for this repo: `/edds/` (filenames: `YYYY-MM-DD-<slug>.edd.md`)
+- EDDs for this repo: `/docs/edds/` (filenames: `YYYY-MM-DD-<slug>.edd.md`)
