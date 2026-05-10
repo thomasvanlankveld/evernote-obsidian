@@ -4,7 +4,12 @@
 
 export type { EvernoteClientOptionsFromHost } from './evernote/evernoteHost.ts';
 export { evernoteClientOptionsFromHost } from './evernote/evernoteHost.ts';
-export { type FetchNoteRecordsOptions, fetchAllNoteRecords } from './evernote/fetchNoteRecords.ts';
+export {
+  evernoteUpdatedMsToIso,
+  type FetchNoteRecordsOptions,
+  type FetchNoteRecordsResult,
+  fetchAllNoteRecords,
+} from './evernote/fetchNoteRecords.ts';
 export type { EvernoteNoteSnapshot, NoteRecord } from './evernote/noteRecord.ts';
 export {
   buildSnapshotEnvelope,

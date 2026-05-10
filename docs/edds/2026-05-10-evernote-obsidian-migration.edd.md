@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-10 (Phase 3 complete)
+**Last updated:** 2026-05-10 (Phase 3 + snapshot hardening)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -71,7 +71,8 @@ This project adds automation: **correlate Evernote note identity → vault file*
 - **Auth:** `EVERNOTE_DEVELOPER_TOKEN` (required for `snapshot`); optional `EVERNOTE_HOST` (`www.evernote.com`, `sandbox.evernote.com`, or `app.yinxiang.com` / Yinxiang).
 - **Transport:** Official npm package `evernote` (Thrift NoteStore); paginated `findNotesMetadata` (default page size 250, optional `--sleep-ms` between pages).
 - **CLI:** `evernote-obsidian snapshot [--out <path>]` — default snapshot path **`./out/evernote-notes.json`** (repo already gitignores `/out/`). Loads **`.env` from cwd** when present without overriding already-set environment variables.
-- **On-disk shape:** `{ version: 1, writtenAt, host, notes: NoteRecord[] }` where each `NoteRecord` is `{ guid, title, updated }` and `updated` is ISO 8601 UTC from Evernote’s `updated` ms value.
+- **On-disk shape:** `{ version: 1, writtenAt, host, notes: NoteRecord[] }` where each `NoteRecord` is `{ guid, title, updated }` and `updated` is ISO 8601 UTC from Evernote’s `updated` ms value. **Snapshot fields may grow** later (e.g. `notebookGuid`) if correlation needs more disambiguation than title + overrides.
+- **Safety:** Missing or non-finite `updated` for a note with a GUID **fails the fetch** (no silent `1970-01-01` rows). CLI accepts **`--max-notes`** to cap volume; stdout includes **`totalNotesFromApi`** when the API returns it.
 
 ### Phase 4 — Link extraction
 

@@ -135,4 +135,12 @@ describe('cli main', () => {
     assert.equal(code, 2);
     assert.match(err(), /unknown snapshot flag/);
   });
+
+  it('snapshot exits 2 when --max-notes is not a positive integer', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['snapshot', '--max-notes', '0'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--max-notes/);
+    assert.match(err(), /positive integer/);
+  });
 });

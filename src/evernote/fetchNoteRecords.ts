@@ -13,6 +13,23 @@ export interface FetchNoteRecordsOptions {
   pageSize?: number | undefined;
   /** Optional pause between pages to reduce rate-limit pressure. */
   sleepBetweenPagesMs?: number | undefined;
+  /**
+   * Stop after this many notes (newest first). Useful for dry runs against production.
+   * When set, fewer than `totalNotesFromApi` rows may appear in `records`.
+   */
+  maxRecords?: number | undefined;
+}
+
+export interface FetchNoteRecordsResult {
+  records: NoteRecord[];
+  clientOpts: EvernoteClientOptionsFromHost;
+  /**
+   * `findNotesMetadata.totalNotes` from the first response when Evernote sends it.
+   * Compare to `records.length` for sanity (see CLI warning when they differ without `maxRecords`).
+   */
+  totalNotesFromApi?: number | undefined;
+  /** True when `maxRecords` capped how many rows were kept. */
+  truncated: boolean;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -47,11 +64,17 @@ function coerceEvernoteRoot(mod: unknown): EvernoteSdkRoot {
   return (m.default ?? mod) as EvernoteSdkRoot;
 }
 
-function updatedToIso(ms: unknown): string {
-  if (typeof ms === 'number' && Number.isFinite(ms)) {
-    return new Date(ms).toISOString();
+/**
+ * Convert Evernote note `updated` (epoch ms) to ISO UTC, or throw if unusable.
+ * Public for unit tests and to avoid silent 1970-01-01 rows in snapshots.
+ */
+export function evernoteUpdatedMsToIso(updated: unknown, guid: string): string {
+  if (typeof updated !== 'number' || !Number.isFinite(updated)) {
+    throw new Error(
+      `Evernote metadata missing a finite updated time for guid=${guid}; refusing to write a misleading snapshot.`,
+    );
   }
-  return new Date(0).toISOString();
+  return new Date(updated).toISOString();
 }
 
 /**
@@ -60,7 +83,7 @@ function updatedToIso(ms: unknown): string {
  */
 export async function fetchAllNoteRecords(
   opts: FetchNoteRecordsOptions,
-): Promise<{ records: NoteRecord[]; clientOpts: EvernoteClientOptionsFromHost }> {
+): Promise<FetchNoteRecordsResult> {
   const EN = coerceEvernoteRoot(evernoteImport);
 
   const clientOpts = evernoteClientOptionsFromHost(opts.hostEnv);
@@ -73,6 +96,8 @@ export async function fetchAllNoteRecords(
 
   const pageSize = Math.min(250, Math.max(1, opts.pageSize ?? 250));
   const sleepMs = Math.max(0, opts.sleepBetweenPagesMs ?? 0);
+  const maxCap =
+    opts.maxRecords !== undefined && opts.maxRecords > 0 ? Math.floor(opts.maxRecords) : undefined;
 
   const filter = new EN.NoteStore.NoteFilter({
     order: EN.Types.NoteSortOrder.UPDATED,
@@ -95,12 +120,22 @@ export async function fetchAllNoteRecords(
   });
 
   const noteStore = client.getNoteStore();
-  const records: NoteRecord[] = [];
+  let records: NoteRecord[] = [];
   let offset = 0;
+  let totalNotesFromApi: number | undefined;
+  let truncated = false;
 
   for (;;) {
     const page = await noteStore.findNotesMetadata(filter, offset, pageSize, spec);
+    if (totalNotesFromApi === undefined) {
+      const t = page.totalNotes;
+      if (typeof t === 'number' && Number.isFinite(t)) {
+        totalNotesFromApi = t;
+      }
+    }
     const batch = page.notes ?? [];
+    let stopPaging = false;
+
     for (const meta of batch) {
       if (!meta || typeof meta !== 'object') {
         continue;
@@ -108,9 +143,20 @@ export async function fetchAllNoteRecords(
       const m = meta as { guid?: unknown; title?: unknown; updated?: unknown };
       const guid = typeof m.guid === 'string' ? m.guid : '';
       const title = typeof m.title === 'string' ? m.title : '';
-      if (guid) {
-        records.push({ guid, title, updated: updatedToIso(m.updated) });
+      if (!guid) {
+        continue;
       }
+      records.push({ guid, title, updated: evernoteUpdatedMsToIso(m.updated, guid) });
+      if (maxCap !== undefined && records.length >= maxCap) {
+        records = records.slice(0, maxCap);
+        truncated = true;
+        stopPaging = true;
+        break;
+      }
+    }
+
+    if (stopPaging) {
+      break;
     }
     if (batch.length < pageSize) {
       break;
@@ -121,5 +167,5 @@ export async function fetchAllNoteRecords(
     }
   }
 
-  return { records, clientOpts };
+  return { records, clientOpts, totalNotesFromApi, truncated };
 }

@@ -15,12 +15,16 @@ A complementary approach is to use **Evernote’s API** (or other metadata sourc
 
 ## Commands (implemented so far)
 
-After `npm install` and `npm run build`, the `evernote-obsidian` CLI is available (see `package.json` `bin`).
+After `npm install` and `npm run build`, the **`evernote-obsidian`** CLI is available (the npm package name matches the tool; see `package.json` `bin`).
 
 - **`evernote-obsidian index [--vault <path>]`** — Walk the vault (default `./data`) and report whether normalized titles are unique enough for correlation.
-- **`evernote-obsidian snapshot [--out <path>] [--page-size <n>] [--sleep-ms <n>]`** — Call Evernote’s API and write a JSON snapshot of note metadata (GUID, title, last updated). Default output: `./out/evernote-notes.json` (the `out/` directory is gitignored).
+- **`evernote-obsidian snapshot [--out <path>] [--page-size <n>] [--sleep-ms <n>] [--max-notes <n>]`** — Call Evernote’s API and write a JSON snapshot of note metadata (GUID, title, last updated). Default output: `./out/evernote-notes.json` (the `out/` directory is gitignored). Use **`--max-notes`** to cap how many newest notes you pull (handy when iterating against production).
 
 Copy `.env.example` to `.env` and set **`EVERNOTE_DEVELOPER_TOKEN`** before `snapshot`. Optional **`EVERNOTE_HOST`** selects production (`www.evernote.com`), sandbox, or Yinxiang (`app.yinxiang.com`).
+
+**`.env` loading** (for `snapshot`) is a small v1 parser: `KEY=value` lines, optional `#` comments, optional single-line quotes. It is **not** full dotenv (e.g. unquoted `#` inside values, `export KEY=`, and multiline values are not supported).
+
+For **very large accounts**, prefer running `snapshot` during a **quiet period**: paging is ordered by `updated` descending; concurrent edits can in theory shift results between pages (the CLI may warn if Evernote’s `totalNotes` does not match the written row count).
 
 ## Evernote snapshot: limits
 
