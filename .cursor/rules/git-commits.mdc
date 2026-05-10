@@ -1,0 +1,8 @@
+---
+description: Disallow AI co-author trailers
+alwaysApply: true
+---
+
+# Git commits
+
+Never add AI attribution trailers (e.g. `Co-authored-by: Cursor <...>`). Only include real human co-authors.

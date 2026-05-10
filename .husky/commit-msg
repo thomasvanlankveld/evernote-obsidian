@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+npx --no -- commitlint --edit "$1"
+
+# Reject Co-authored-by trailers that credit AI coding assistants (e.g. Cursor).
+if grep -qiE '^co-authored-by:.*(cursor|cursoragent|anthropic|claude|openai|github-copilot|copilot|chatgpt|gemini|aider|tabnine|codex|devin|windsurf)' "$1"; then
+  echo >&2 "This commit message includes a Co-authored-by trailer for an AI agent."
+  echo >&2 "Remove those line(s) and commit again, or disable that trailer in your editor."
+  exit 1
+fi

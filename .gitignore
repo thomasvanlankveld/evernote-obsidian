@@ -1,0 +1,18 @@
+# Local vault copy / imports (personal notes; large; not for the repo)
+/data/
+
+# Dependencies
+node_modules/
+
+# Secrets (Evernote API tokens, etc.)
+.env
+.env.*
+!.env.example
+
+# Logs and OS noise
+*.log
+.DS_Store
+
+# Build / tool output (add paths here as the project grows)
+/dist/
+/out/
