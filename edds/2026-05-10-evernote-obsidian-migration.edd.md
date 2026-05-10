@@ -33,49 +33,47 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 ## 5. Implementation phases
 
-### Phase 0 — Decisions
-
-Resolve items in **§8 Open questions & decisions** before large implementation.
-
 ### Phase 1 — Scaffold
 
-- TypeScript (or ESM TypeScript via `tsx`), `src/`, CLI entry (`package.json` `bin` or `node dist/cli.js`).
+- **TypeScript**, compile to **`dist/`**, **Node ESM**; `src/`, CLI entry (`package.json` `bin` or `node dist/cli.js`); optional `tsx` for local dev.
 - Scripts: `build`, `lint`, `test`, `dev`.
 - `.env.example` for credentials; align `.gitignore` with build dirs (`/dist/`, `/out/`, reports if written under repo).
 
 ### Phase 2 — Vault index (read-only)
 
-- Walk configurable vault root (default: `data/`).
+- Walk configurable vault root; **CLI default** is **`./data`** (cwd-relative), overridable with **`--vault`**.
 - Index Markdown files: path, **normalized title** from filename and optional YAML frontmatter.
-- Policy for **duplicate titles** (see §8).
+- **Correlation key (v1):** normalized **title** only; optional later: frontmatter such as `evernote-guid:` if a preprocessor adds it.
+- **Duplicate titles:** **fail** with a report listing collisions; user supplies **override** rows (CSV/JSON) until the map is unambiguous — **no** silent first-wins.
 
 **Deliverable:** `buildVaultIndex(root)` + fixture tests.
 
 ### Phase 3 — Evernote metadata
 
-- **Option A — API:** authenticate, list/fetch notes (GUID, title, updated), persist **gitignored JSON snapshot** for idempotent reruns and rate-limit friendliness.
-- **Option B — Offline:** parse `.enex` / exports for GUIDs and link patterns (no network).
+- **v1 — API first:** authenticate, list/fetch notes (GUID, title, updated), persist **gitignored JSON snapshot** for idempotent reruns and rate limits.
+- **Follow-on:** parse **`.enex` / offline** exports for GUIDs and link patterns when the API is not an option.
 
 **Deliverable:** `NoteRecord[]` + redacted fixture tests.
 
 ### Phase 4 — Link extraction
 
-- Per `.md`, find `evernote:///…` and other agreed patterns (e.g. Evernote web URLs if needed).
-- Emit **report only**: file, location, raw URL, parsed id when possible.
+- Per `.md`, find **note** URLs: **`evernote://…`** and **`https://www.evernote.com/shard/…`**; normalize each to **GUID** for the link map. Other **`*.evernote.com`** hosts (e.g. blog): **do not rewrite** — report or skip per CLI.
+- Capture **display text / alias** when the import left one (e.g. existing `[[alias]]`-style segments or markdown link text) so rewrites can use **`[[path|alias]]`** without changing what readers see.
+- Emit **report only**: file, location, raw URL, parsed id, alias when possible.
 
 **Deliverable:** `BrokenLink[]` JSON or stdout; no writes.
 
 ### Phase 5 — Correlation
 
-- Join Evernote records to vault index: primary **title match** (normalized), plus **user override file** (CSV/JSON) for collisions and renames.
-- Emit **link map**: `guid | url-pattern → vault-relative path` and optional **target wikilink** string.
+- Join Evernote records to vault index by **normalized title**, plus **user override file** for collisions and renames.
+- Emit **link map**: `guid | url-pattern → vault-relative path` (target note file). Rewrites combine this path with the **alias** from extraction into **`[[path|alias]]`**.
 
 **Deliverable:** `link-map.json` (default gitignored unless sanitized).
 
 ### Phase 6 — Rewrite
 
-- CLI: `--vault`, `--map`, `--dry-run`, `--out-dir` vs `--in-place` (with optional backup copy).
-- Replace targets per §8 link style; preserve surrounding Markdown where possible.
+- CLI: **`--vault`** (default `./data`), **`--map`**, **`--dry-run`**, **`--out-dir`** vs **`--in-place`** (with optional backup copy).
+- Replace Evernote **note** URLs with **`[[path|alias]]`** (vault-relative path + captured alias); preserve surrounding Markdown where possible.
 
 ### Phase 7 — Hardening
 
@@ -88,7 +86,7 @@ Resolve items in **§8 Open questions & decisions** before large implementation.
 | Risk | Mitigation |
 |------|------------|
 | Title mismatch after Importer sanitization | Normalization rules + override file; verbose unmatched report |
-| Duplicate titles | Explicit policy (fail, first-wins, or require disambiguation) |
+| Duplicate titles | Fail with report; overrides required until unambiguous |
 | API limits / offline-only constraint | Snapshot cache; document Option B (.enex) path |
 | Wrong rewrites | Dry-run default; golden tests; backup before in-place |
 
@@ -98,28 +96,3 @@ Resolve items in **§8 Open questions & decisions** before large implementation.
 - [obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306)
 - Repo README: `/README.md`
 - EDDs for this repo: `/edds/` (filenames: `YYYY-MM-DD-<slug>.edd.md`)
-
-## 8. Open questions & decisions
-
-Track status: **TBD** | **Proposed** | **Accepted**
-
-| ID | Question | Status | Notes / proposal |
-|----|----------|--------|------------------|
-| Q1 | **Evernote source:** API vs `.enex`-only for v1? | Proposed | **API first** for stable GUIDs and scale; add `.enex` parser when someone cannot use API. |
-| Q2 | **Primary vault correlation key:** title only vs title + hash vs frontmatter? | Proposed | **Title (+ normalization)** for v1; optional frontmatter key later (e.g. `evernote-guid:`) if user adds it via preprocessor. |
-| Q3 | **Duplicate titles** in vault or Evernote | Proposed | **Fail with report** listing collisions; require override rows for each duplicate until map is unambiguous. Safer than silent first-wins. |
-| Q4 | **Output link style** | Proposed | **`[[Note Title]]`** for v1 (match Obsidian default importer titles); optional flag for `[[path|alias]]` or Markdown `[]()` later. |
-| Q5 | **URL patterns to rewrite** | Proposed | Minimum: `evernote:///…`; extend after sampling real vault (web `evernote.com` links, etc.). |
-| Q6 | **Default vault path in CLI** | Proposed | **`./data`** relative to cwd; override with `--vault`. |
-| Q7 | **Language / runtime** | Proposed | **TypeScript**, compile to `dist/`, Node ESM. |
-| Q8 | **`.nvmrc`** | TBD | README references Node 24; add `24` at repo root when scaffold lands. |
-
-### 8.1 Resolved when accepted
-
-When you accept or change a row above, update **Status** to **Accepted** and move any superseded idea to a short **Decision log** subsection (date + one line).
-
----
-
-## Decision log
-
-_(Append accepted choices here as you lock them.)_
