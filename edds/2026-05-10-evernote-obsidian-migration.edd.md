@@ -3,9 +3,9 @@
 **Status:** Draft  
 **Last updated:** 2026-05-10
 
-### EDD phase completion (before you push / open a PR)
+## EDD phase completion (before you push / open a PR)
 
-When implementation for a phase is done on your branch: run **`npm test`** (and **`npm run build`** / **`npm run lint`** if you touched code), then in **this EDD** tick that phase’s checkbox(es) and bump **Last updated** if the plan changed. Keep EDD edits in the **same branch** as the code so reviewers see intent and execution together.
+When implementation for a phase is done on your branch: run **`npm test`** (and **`npm run build`** / **`npm run lint`** if you touched code), then in **this EDD** tick that phase’s checkbox(es) and bump **Last updated** if the plan changed. Keep EDD edits in the **same branch** as the code so reviewers see intent and execution together. Agents: canonical checklist in [AGENTS.md](./AGENTS.md) in this folder.
 
 ## 1. Context
 
@@ -86,12 +86,12 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 ## 6. Risks
 
-| Risk | Mitigation |
-|------|------------|
-| Title mismatch after Importer sanitization | Normalization rules + override file; verbose unmatched report |
-| Duplicate titles | Fail with report; overrides required until unambiguous |
-| API limits / outages | Snapshot cache; retry/backoff; document when to refresh the snapshot |
-| Wrong rewrites | Dry-run default; golden tests; backup before in-place |
+| Risk                                       | Mitigation                                                           |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| Title mismatch after Importer sanitization | Normalization rules + override file; verbose unmatched report        |
+| Duplicate titles                           | Fail with report; overrides required until unambiguous               |
+| API limits / outages                       | Snapshot cache; retry/backoff; document when to refresh the snapshot |
+| Wrong rewrites                             | Dry-run default; golden tests; backup before in-place                |
 
 ## 7. References
 
