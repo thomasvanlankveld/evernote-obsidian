@@ -1,1 +1,5 @@
-Be concise
+Be concise.
+
+Git policy (agents):
+- Prefer `git merge` (or PR) over rebase.
+- Never rewrite remote/shared history: no `rebase`, `reset --hard`, `commit --amend`, or `push --force`—unless explicitly requested in this chat.
