@@ -5,7 +5,7 @@
 
 ## 1. Context
 
-Exporting Evernote to `.enex` and importing with Obsidian’s Importer preserves content but often leaves **internal links** as `evernote:///…` URLs. Importers lack stable crosswalk from those URLs to the Markdown files actually created ([obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306)).
+Exporting Evernote to `.enex` and importing with Obsidian’s Importer preserves content but often leaves **internal links** as **`evernote://…`** URLs or **`https://www.evernote.com/shard/…`** web links. Importers lack stable crosswalk from those URLs to the Markdown files actually created ([obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306)).
 
 This project adds automation: **correlate Evernote note identity → vault file**, then **rewrite links** in bulk.
 
@@ -27,7 +27,7 @@ This project adds automation: **correlate Evernote note identity → vault file*
 [Vault .md files] ──► scan ──► broken evernote links
                                     │
 [Evernote metadata] ──► index ──────┼──► correlate ──► link map
-(API snapshot or .enex)             │                      │
+(gitignored API snapshot)           │                      │
                                     └──────────────────────┼──► rewrite (dry-run / out-dir / in-place+backup)
 ```
 
@@ -48,10 +48,9 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 **Deliverable:** `buildVaultIndex(root)` + fixture tests.
 
-### Phase 3 — Evernote metadata
+### Phase 3 — Evernote metadata (API only)
 
-- **v1 — API first:** authenticate, list/fetch notes (GUID, title, updated), persist **gitignored JSON snapshot** for idempotent reruns and rate limits.
-- **Follow-on:** parse **`.enex` / offline** exports for GUIDs and link patterns when the API is not an option.
+- Authenticate, list/fetch notes (GUID, title, updated), persist **gitignored JSON snapshot** for idempotent reruns and rate limits.
 
 **Deliverable:** `NoteRecord[]` + redacted fixture tests.
 
@@ -66,7 +65,7 @@ This project adds automation: **correlate Evernote note identity → vault file*
 ### Phase 5 — Correlation
 
 - Join Evernote records to vault index by **normalized title**, plus **user override file** for collisions and renames.
-- Emit **link map**: `guid | url-pattern → vault-relative path` (target note file). Rewrites combine this path with the **alias** from extraction into **`[[path|alias]]`**.
+- Emit **link map**: **GUID → vault-relative path** to the target note file (all extracted note URLs normalize to a GUID). Rewrites combine this path with the **alias** from extraction into **`[[path|alias]]`**.
 
 **Deliverable:** `link-map.json` (default gitignored unless sanitized).
 
@@ -87,7 +86,7 @@ This project adds automation: **correlate Evernote note identity → vault file*
 |------|------------|
 | Title mismatch after Importer sanitization | Normalization rules + override file; verbose unmatched report |
 | Duplicate titles | Fail with report; overrides required until unambiguous |
-| API limits / offline-only constraint | Snapshot cache; document Option B (.enex) path |
+| API limits / outages | Snapshot cache; retry/backoff; document when to refresh the snapshot |
 | Wrong rewrites | Dry-run default; golden tests; backup before in-place |
 
 ## 7. References
