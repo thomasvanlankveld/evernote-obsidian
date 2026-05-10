@@ -3,6 +3,10 @@
 **Status:** Draft  
 **Last updated:** 2026-05-10
 
+## EDD phase completion (before you push / open a PR)
+
+When implementation for a phase is done on your branch: run **`npm test`** (and **`npm run build`** / **`npm run lint`** if you touched code), then in **this EDD** tick that phase’s checkbox(es) and bump **Last updated** if the plan changed. Keep EDD edits in the **same branch** as the code so reviewers see intent and execution together. Agents: canonical checklist in [AGENTS.md](./AGENTS.md) in this folder.
+
 ## 1. Context
 
 Exporting Evernote to `.enex` and importing with Obsidian’s Importer preserves content but often leaves **internal links** as **`evernote://…`** URLs or **`https://www.evernote.com/shard/…`** web links. Importers lack stable crosswalk from those URLs to the Markdown files actually created ([obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306)).
@@ -35,18 +39,26 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 ### Phase 1 — Scaffold
 
-- **TypeScript**, compile to **`dist/`**, **Node ESM**; `src/`, CLI entry (`package.json` `bin` or `node dist/cli.js`); optional `tsx` for local dev.
-- Scripts: `build`, `lint`, `test`, `dev`.
-- `.env.example` for credentials; align `.gitignore` with build dirs (`/dist/`, `/out/`, reports if written under repo).
+- [x] **TypeScript**, compile to **`dist/`**, **Node ESM**; `src/`, CLI entry (`package.json` `bin` or `node dist/cli.js`); optional `tsx` for local dev.
+- [x] Scripts: `build`, `lint`, `test`, `dev`.
+- [x] `.env.example` for credentials; align `.gitignore` with build dirs (`/dist/`, `/out/`, reports if written under repo).
 
 ### Phase 2 — Vault index (read-only)
 
-- Walk configurable vault root; **CLI default** is **`./data`** (cwd-relative), overridable with **`--vault`**.
-- Index Markdown files: path, **normalized title** from filename and optional YAML frontmatter.
-- **Correlation key (v1):** normalized **title** only; optional later: frontmatter such as `evernote-guid:` if a preprocessor adds it.
-- **Duplicate titles:** **fail** with a report listing collisions; user supplies **override** rows (CSV/JSON) until the map is unambiguous — **no** silent first-wins.
+- [x] Walk configurable vault root; **CLI default** is **`./data`** (cwd-relative), overridable with **`--vault`** (`evernote-obsidian index`).
+- [x] Index Markdown files: path, **normalized title** from filename and optional YAML frontmatter (`title:`).
+- [x] **Correlation key (v1):** normalized **title** only; optional later: frontmatter such as `evernote-guid:` if a preprocessor adds it.
+- [x] **Duplicate titles:** **fail** with a report listing collisions — **no** silent first-wins (overrides land in a later phase).
 
-**Deliverable:** `buildVaultIndex(root)` + fixture tests.
+**Phase 2 implementation notes**
+
+- **Frontmatter `title:` (v1):** line-based subset only (first `title:` scalar line, optional simple quotes), not full YAML — no block scalars, aliases, or other keys.
+- **Empty normalized title** (e.g. filename stem trims to nothing): **invalid**; index fails with the same collision-shaped report shape (`normalizedTitle: ""`).
+- **Symlinks:** **symlinked directories are not recursed** (avoids cycles); a regular file that is a symlink is still indexed. Layouts that rely on symlinked folders for notes are unsupported in v1.
+- **CLI:** `--vault` requires a path when the flag is present; other I/O errors surface as **exit 2** and a short message (not only missing root).
+- **Tooling noise:** only `.git` and `node_modules` are skipped by name; e.g. **`.obsidian`** may contribute Markdown — add an ignore list later if that hurts real vaults.
+
+**Deliverable:** `buildVaultIndex(root)` + fixture tests. ✅
 
 ### Phase 3 — Evernote metadata (API only)
 
@@ -82,16 +94,16 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 ## 6. Risks
 
-| Risk | Mitigation |
-|------|------------|
-| Title mismatch after Importer sanitization | Normalization rules + override file; verbose unmatched report |
-| Duplicate titles | Fail with report; overrides required until unambiguous |
-| API limits / outages | Snapshot cache; retry/backoff; document when to refresh the snapshot |
-| Wrong rewrites | Dry-run default; golden tests; backup before in-place |
+| Risk                                       | Mitigation                                                           |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| Title mismatch after Importer sanitization | Normalization rules + override file; verbose unmatched report        |
+| Duplicate titles                           | Fail with report; overrides required until unambiguous               |
+| API limits / outages                       | Snapshot cache; retry/backoff; document when to refresh the snapshot |
+| Wrong rewrites                             | Dry-run default; golden tests; backup before in-place                |
 
 ## 7. References
 
 - [Import from Evernote – Obsidian Help](https://obsidian.md/help/import/evernote)
 - [obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306)
 - Repo README: `/README.md`
-- EDDs for this repo: `/edds/` (filenames: `YYYY-MM-DD-<slug>.edd.md`)
+- EDDs for this repo: `/docs/edds/` (filenames: `YYYY-MM-DD-<slug>.edd.md`)

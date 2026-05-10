@@ -1,5 +1,6 @@
 {
   "name": "evernote-export",
+  "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "description": "Tools for migrating Evernote → Obsidian with usable internal links",
