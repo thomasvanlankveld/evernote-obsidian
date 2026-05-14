@@ -9,6 +9,9 @@ node_modules/
 .env.*
 !.env.example
 
+# Local shell hooks (optional direnv; not tracked)
+.envrc
+
 # Logs and OS noise
 *.log
 .DS_Store
