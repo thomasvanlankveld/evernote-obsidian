@@ -2,6 +2,21 @@
  * Public library entry for vault indexing, Evernote metadata, link extraction, correlation, and rewrite.
  */
 
+export type {
+  CorrelateResult,
+  DuplicateTargetPath,
+  EvernoteTitleCollision,
+  InvalidOverride,
+  UnmatchedNote,
+  VaultIndexForCorrelation,
+} from './correlation/correlate.ts';
+export {
+  correlateSnapshotToGuidPaths,
+  vaultIndexResultToCorrelationInput,
+} from './correlation/correlate.ts';
+export type { LinkMapFile } from './correlation/linkMapFile.ts';
+export { buildLinkMapFile } from './correlation/linkMapFile.ts';
+export { parseCorrelationOverridesJson } from './correlation/overridesFile.ts';
 export type { EvernoteNoteSnapshot, NoteRecord } from './evernote/noteRecord.ts';
 export {
   type ReadEvernoteBackupDbOptions,

@@ -1,10 +1,20 @@
 /**
  * CLI entrypoint for the Evernote → Obsidian link-repair pipeline.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import {
+  correlateSnapshotToGuidPaths,
+  vaultIndexResultToCorrelationInput,
+} from '../correlation/correlate.ts';
+import { buildLinkMapFile } from '../correlation/linkMapFile.ts';
+import { parseCorrelationOverridesJson } from '../correlation/overridesFile.ts';
 import { readNoteRecordsFromEvernoteBackupDb } from '../evernote/readEvernoteBackupDb.ts';
-import { buildSnapshotEnvelope, writeSnapshotFile } from '../evernote/snapshotFile.ts';
+import {
+  buildSnapshotEnvelope,
+  readSnapshotFile,
+  writeSnapshotFile,
+} from '../evernote/snapshotFile.ts';
 import { scanVaultForEvernoteLinks } from '../vault/extractEvernoteLinks.ts';
 import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
 import { readCliPackageVersion } from './packageVersion.ts';
@@ -64,6 +74,15 @@ export async function main(
       return 2;
     }
     return runLinks(parsed.links, streams);
+  }
+
+  if (cmd === 'correlate') {
+    const parsed = parseCorrelateArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runCorrelate(parsed.correlate, streams);
   }
 
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);
@@ -233,6 +252,176 @@ function parseLinksArgs(
   return { ok: true, links: { vaultRoot, skipOtherEvernoteHosts, outPath } };
 }
 
+interface CorrelateCliOk {
+  vaultRoot: string;
+  snapshotPath: string;
+  overridesPath?: string | undefined;
+  outPath: string;
+}
+
+function parseCorrelateArgs(
+  args: readonly string[],
+  cwd: string,
+): { ok: true; correlate: CorrelateCliOk } | { ok: false; message: string } {
+  const defaultVault = resolve(cwd, 'data');
+  const defaultOut = resolve(cwd, 'out', 'link-map.json');
+  let vaultRoot = defaultVault;
+  let snapshotPath: string | undefined;
+  let overridesPath: string | undefined;
+  let outPath = defaultOut;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--vault') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return { ok: false, message: 'error: --vault requires a path (e.g. --vault ./data)' };
+      }
+      vaultRoot = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--vault=')) {
+      const tail = a.slice('--vault='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --vault= requires a non-empty path' };
+      }
+      vaultRoot = resolve(cwd, tail);
+    } else if (a === '--snapshot') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return {
+          ok: false,
+          message: 'error: --snapshot requires a path (e.g. --snapshot ./out/evernote-notes.json)',
+        };
+      }
+      snapshotPath = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--snapshot=')) {
+      const tail = a.slice('--snapshot='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --snapshot= requires a non-empty path' };
+      }
+      snapshotPath = resolve(cwd, tail);
+    } else if (a === '--overrides') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return {
+          ok: false,
+          message:
+            'error: --overrides requires a path (e.g. --overrides ./out/correlation-overrides.json)',
+        };
+      }
+      overridesPath = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--overrides=')) {
+      const tail = a.slice('--overrides='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --overrides= requires a non-empty path' };
+      }
+      overridesPath = resolve(cwd, tail);
+    } else if (a === '--out') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return {
+          ok: false,
+          message: 'error: --out requires a path (e.g. --out ./out/link-map.json)',
+        };
+      }
+      outPath = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--out=')) {
+      const tail = a.slice('--out='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --out= requires a non-empty path' };
+      }
+      outPath = resolve(cwd, tail);
+    } else {
+      return { ok: false, message: `error: unknown correlate flag: ${a}` };
+    }
+  }
+
+  if (snapshotPath === undefined) {
+    return {
+      ok: false,
+      message:
+        'error: correlate requires --snapshot <path> (Evernote JSON snapshot, e.g. ./out/evernote-notes.json)',
+    };
+  }
+
+  return {
+    ok: true,
+    correlate: { vaultRoot, snapshotPath, overridesPath, outPath },
+  };
+}
+
+async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promise<number> {
+  try {
+    const index = await buildVaultIndex(parsed.vaultRoot);
+    if (!index.ok) {
+      streams.stderr.write(
+        `${JSON.stringify({ ok: false, reason: 'vault_index_collisions', collisions: index.collisions }, null, 2)}\n`,
+      );
+      return 1;
+    }
+
+    const snapshot = await readSnapshotFile(parsed.snapshotPath);
+    let overrides = new Map<string, string>();
+    if (parsed.overridesPath !== undefined) {
+      const raw = await readFile(parsed.overridesPath, 'utf8');
+      overrides = parseCorrelationOverridesJson(raw);
+    }
+
+    const vaultInput = vaultIndexResultToCorrelationInput(
+      index.byNormalizedTitle,
+      index.entries.map((e) => e.path),
+    );
+    const result = correlateSnapshotToGuidPaths(snapshot.notes, vaultInput, overrides);
+    if (!result.ok) {
+      streams.stderr.write(
+        `${JSON.stringify(
+          {
+            ok: false,
+            reason: 'correlation_failed',
+            evernoteTitleCollisions: result.evernoteTitleCollisions,
+            unmatched: result.unmatched,
+            invalidOverrides: result.invalidOverrides,
+            duplicateTargetPaths: result.duplicateTargetPaths,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return 1;
+    }
+
+    const linkMap = buildLinkMapFile(
+      parsed.vaultRoot,
+      parsed.snapshotPath,
+      result.guidToPath,
+      parsed.overridesPath,
+    );
+    await mkdir(dirname(parsed.outPath), { recursive: true });
+    await writeFile(parsed.outPath, `${JSON.stringify(linkMap, null, 2)}\n`, 'utf8');
+
+    const summary = {
+      ok: true as const,
+      path: parsed.outPath,
+      vault: parsed.vaultRoot,
+      snapshot: parsed.snapshotPath,
+      count: result.guidToPath.size,
+    };
+    streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return 0;
+  } catch (e) {
+    if (e instanceof VaultIndexRootError) {
+      streams.stderr.write(`${e.message}\n`);
+      return 2;
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    streams.stderr.write(`correlate: ${msg}\n`);
+    return 2;
+  }
+}
+
 async function runLinks(parsed: LinksCliOk, streams: MainStreams): Promise<number> {
   try {
     const links = await scanVaultForEvernoteLinks(parsed.vaultRoot, {
@@ -331,17 +520,21 @@ function usage(): string {
     '  evernote-obsidian index [--vault <path>]',
     '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',
     '  evernote-obsidian links [--vault <path>] [--out <path>] [--skip-other-evernote-hosts]',
+    '  evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]',
     '',
     'Commands:',
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
     '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
+    '  correlate  Join snapshot GUIDs to vault paths by normalized title; optional overrides JSON.',
     '',
     'Options:',
     '  --vault                        Vault root directory (default: ./data relative to cwd)',
+    '  --snapshot                     Path to Evernote snapshot JSON (required for correlate)',
+    '  --overrides                    Optional JSON file: { "version": 1, "byGuid": { "<guid>": "<path>" } }',
     '  --skip-other-evernote-hosts    Omit non-shard *.evernote.com URLs from the links report',
     '  --db                           Path to evernote-backup SQLite database (required for snapshot)',
-    '  --out                          Output path (snapshot default: ./out/evernote-notes.json; links: stdout unless set)',
+    '  --out                          Output path (snapshot default: ./out/evernote-notes.json; correlate: ./out/link-map.json; links: stdout unless set)',
     '  --max-notes                    Stop after N notes (optional cap; notes ordered by title)',
     '',
     '  evernote-backup: https://github.com/vzhd1701/evernote-backup',
