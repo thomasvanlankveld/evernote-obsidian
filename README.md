@@ -48,7 +48,7 @@ These boundaries are intentional for an early, personal migration tool; they are
 
 ## Contributing
 
-Repository tooling, GitHub token + **direnv** layout for `gh` / HTTPS Git, and local build commands: [CONTRIBUTING.md](CONTRIBUTING.md).
+Local build commands and **optional** Git / GitHub notes (no prescribed credential layout in git): [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Next steps (for later implementation)
 

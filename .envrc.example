@@ -1,0 +1,3 @@
+# Optional: copy to `.envrc` and run `direnv allow`. See CONTRIBUTING.md.
+# Loads a personal env file (not in git); adjust the path if you like.
+dotenv_if_exists "${HOME}/.config/gh/evernote-obsidian.env"

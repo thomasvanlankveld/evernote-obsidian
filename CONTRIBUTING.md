@@ -1,6 +1,6 @@
 # Contributing
 
-Notes for anyone working **in this repository** (humans, agents, CI-style shells): tooling, GitHub access, and local checks. For what the project does and how to run the Evernote CLI, see [README.md](README.md).
+Notes for anyone working **in this repository**: local checks and **optional** GitHub notes. For what the project does and how to run the Evernote CLI, see [README.md](README.md).
 
 ## Local development
 
@@ -10,37 +10,26 @@ Notes for anyone working **in this repository** (humans, agents, CI-style shells
 - **Tests:** `npm test`
 - **Lint:** `npm run lint` — `npm run format` applies Biome fixes.
 
-## GitHub (`gh` / Git over HTTPS)
+## Git and GitHub (your machine, your rules)
 
-Optional: use a **fine-grained personal access token** scoped to **this repository only**, with the smallest permission set you need (for example **Contents** and **Pull requests**, plus **Issues** if you want normal PR thread comments). That keeps automation and local tools off **full** `gh auth login` access to every repo your account can reach.
+This repo **does not** prescribe how you authenticate to GitHub. Use **SSH**, **`gh auth login`**, **HTTPS + personal access token**, or whatever fits your workflow. Remotes can be `git@github.com:…` or `https://github.com/…`.
 
-Put the token **outside** the project tree (narrower blast radius if something reads the workspace), for example `~/.config/gh/evernote-obsidian.env`:
+If you use **`gh`** with a token, set **`GH_TOKEN`** or **`GITHUB_TOKEN`** in the environment the way you prefer (shell profile, OS secret store, CI secrets, etc.). For **`git`** over HTTPS with a token, run **`gh auth setup-git`** once so Git uses `gh` as the credential helper (or configure another helper you trust).
 
-```text
-GH_TOKEN=github_pat_xxxxxxxx
-```
+### Optional pattern: direnv + token outside the repo
 
-Use **`chmod 600`** on that file.
+Some people keep a fine-grained PAT in a file under **`$HOME`** (for example `~/.config/gh/evernote-obsidian.env` with a single line `GH_TOKEN=…`, file mode **`600`**), then load it only in this directory:
 
-With **[direnv](https://direnv.net/)**, the committed root **`.envrc`** loads that file using a single line (no secrets in git; no `export` in the env file — `dotenv_if_exists` exports variables for you):
+1. Copy **`.envrc.example`** to **`.envrc`** (`.envrc` is gitignored).
+2. Edit paths if yours differ.
+3. Run **`direnv allow`** in the repo root.
 
-```bash
-dotenv_if_exists "${HOME}/.config/gh/evernote-obsidian.env"
-```
+That layout is **not required**; it is only a documented example.
 
-After **`direnv allow`** in this directory, `gh` and Git over `https://github.com/…` pick up **`GH_TOKEN`** for this shell. Prefer **HTTPS** remotes for this flow; **SSH** uses your keys separately and is not limited by the PAT’s repository list.
+### Agents, Cursor, and “always asking permission”
 
-### Non-interactive shells (CI, Cursor agents, scripts)
-
-`direnv` hooks **interactive** shells only. For one-off commands with the same env as `.envrc`, run from the **repository root**:
-
-```bash
-direnv exec . git push
-direnv exec . gh pr status
-```
-
-That loads **`GH_TOKEN`** without relying on `cd` hooks. In **Cursor**, agent `git push` / `fetch` / `gh` also need tool permissions that allow **network** and reading **`~/.config/...`** (often **`all`** on the sandboxed runner); see root **`AGENTS.md`**.
+If the **agent** still prompts before **`git pull`**, **`git push`**, or **`gh`**, that is almost always **Cursor’s sandbox / auto-run policy** (network, `git_write`, or **`all`** when the tool must read **`$HOME`** for credentials)—not missing files in this repository. Grant the requested capability for that run, adjust Cursor’s automation settings for trusted workspaces, or run Git yourself outside the agent. **`direnv` hooks only apply to interactive shells**; for scripts or agents, **`direnv exec . <command>`** from the repo root can load a local **`.envrc`** if you use one—see root **`AGENTS.md`**.
 
 ## Secrets
 
-Never commit Evernote tokens, GitHub tokens, or `.enex` exports. The CLI reads **`.env`** for Evernote variables (see **`.env.example`** and the README); GitHub credentials belong only in paths like the env file above or your own secret store.
+Never commit Evernote tokens, OAuth token files, consumer secrets, GitHub tokens, or `.enex` exports. The CLI reads **`.env`** for Evernote variables (see **`.env.example`** and the README); keep GitHub credentials in your own secret store or untracked local files.
