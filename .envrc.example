@@ -1,2 +1,0 @@
-# Optional: copy to `.envrc` and run `direnv allow`. See CONTRIBUTING.md.
-dotenv_if_exists .env.github
