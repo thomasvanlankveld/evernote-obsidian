@@ -15,7 +15,11 @@ export {
   vaultIndexResultToCorrelationInput,
 } from './correlation/correlate.ts';
 export type { LinkMapFile } from './correlation/linkMapFile.ts';
-export { buildLinkMapFile } from './correlation/linkMapFile.ts';
+export {
+  buildLinkMapFile,
+  LinkMapParseError,
+  parseLinkMapJson,
+} from './correlation/linkMapFile.ts';
 export { parseCorrelationOverridesJson } from './correlation/overridesFile.ts';
 export type { EvernoteNoteSnapshot, NoteRecord } from './evernote/noteRecord.ts';
 export {
@@ -32,14 +36,18 @@ export {
 } from './evernote/snapshotFile.ts';
 export type {
   BrokenLink,
+  MergedEvernoteUrlSpan,
   ScanEvernoteLinksOptions,
 } from './vault/extractEvernoteLinks.ts';
 export {
   classifyEvernoteUrl,
   extractEvernoteLinksFromMarkdown,
+  mergeEvernoteUrlSpans,
   scanVaultForEvernoteLinks,
   tryParseNoteGuidFromUrl,
 } from './vault/extractEvernoteLinks.ts';
+export type { RewriteMarkdownResult } from './vault/rewriteEvernoteLinks.ts';
+export { rewriteMarkdownWithGuidMap } from './vault/rewriteEvernoteLinks.ts';
 export type {
   VaultIndexCollision,
   VaultIndexEntry,

@@ -277,4 +277,100 @@ describe('cli main', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('rewrite exits 2 when --map is missing', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['rewrite'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--map/);
+  });
+
+  it('rewrite exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['rewrite', '--map', '/tmp/x.json', '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown rewrite flag/);
+  });
+
+  it('rewrite exits 2 when --dry-run is combined with --out-dir', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(
+      ['rewrite', '--map', '/tmp/x.json', '--dry-run', '--out-dir', '/tmp/y'],
+      streams,
+    );
+    assert.equal(code, 2);
+    assert.match(err(), /--dry-run/);
+  });
+
+  it('rewrite exits 0 in dry-run default and reports replacements', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-rewrite-dry-'));
+    const mapPath = join(dir, 'link-map.json');
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: linksFixtureDir,
+      snapshotPath: '/x',
+      guidToPath: {
+        'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee': 'other.md',
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': 'b.md',
+        'cccccccc-cccc-cccc-cccc-cccccccccccc': 'c.md',
+      },
+    };
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(['rewrite', '--vault', linksFixtureDir, '--map', mapPath], streams, {
+        cwd: dir,
+      });
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summary = JSON.parse(out()) as {
+        mode: string;
+        wroteFiles: boolean;
+        filesChanged: number;
+        replacements: number;
+      };
+      assert.equal(summary.mode, 'dry-run');
+      assert.equal(summary.wroteFiles, false);
+      assert.ok(summary.filesChanged >= 1);
+      assert.ok(summary.replacements >= 3);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rewrite --out-dir writes mirrored markdown', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-rewrite-out-'));
+    const mapPath = join(dir, 'link-map.json');
+    const outVault = join(dir, 'out-vault');
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: linksFixtureDir,
+      snapshotPath: '/x',
+      guidToPath: {
+        'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee': 'other.md',
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': 'b.md',
+        'cccccccc-cccc-cccc-cccc-cccccccccccc': 'c.md',
+      },
+    };
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['rewrite', '--vault', linksFixtureDir, '--map', mapPath, '--out-dir', outVault],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summary = JSON.parse(out()) as { mode: string; wroteFiles: boolean };
+      assert.equal(summary.mode, 'out-dir');
+      assert.equal(summary.wroteFiles, true);
+      const mixed = await readFile(join(outVault, 'mixed.md'), 'utf8');
+      assert.match(mixed, /\[\[other\.md\|My note alias\]\]/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
