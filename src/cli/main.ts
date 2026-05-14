@@ -3,10 +3,9 @@
  */
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { fetchAllNoteRecords } from '../evernote/fetchNoteRecords.ts';
+import { readNoteRecordsFromEvernoteBackupDb } from '../evernote/readEvernoteBackupDb.ts';
 import { buildSnapshotEnvelope, writeSnapshotFile } from '../evernote/snapshotFile.ts';
 import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
-import { loadDotEnvFromCwd } from './loadDotEnv.ts';
 import { readCliPackageVersion } from './packageVersion.ts';
 
 export interface MainStreams {
@@ -15,9 +14,11 @@ export interface MainStreams {
 }
 
 export interface MainOptions {
-  /** Override cwd for path resolution, `.env` loading, and defaults (tests). */
+  /** Override cwd for path resolution and defaults (tests). */
   cwd?: string | undefined;
 }
+
+const SNAPSHOT_METADATA_HOST = 'evernote-backup';
 
 export async function main(
   argv: readonly string[],
@@ -52,7 +53,7 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    return runSnapshot(parsed.snapshot, cwd, streams);
+    return runSnapshot(parsed.snapshot, streams);
   }
 
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);
@@ -86,10 +87,9 @@ function parseVaultRootForIndex(
 }
 
 interface SnapshotCliOk {
+  dbPath: string;
   outPath: string;
-  pageSize: number;
-  sleepBetweenPagesMs: number;
-  /** When set, stop after this many notes (newest first). */
+  /** When set, stop after this many notes (ordered by title). */
   maxRecords?: number | undefined;
 }
 
@@ -99,13 +99,28 @@ function parseSnapshotArgs(
 ): { ok: true; snapshot: SnapshotCliOk } | { ok: false; message: string } {
   const defaultOut = resolve(cwd, 'out', 'evernote-notes.json');
   let outPath = defaultOut;
-  let pageSize = 250;
-  let sleepBetweenPagesMs = 0;
+  let dbPath: string | undefined;
   let maxRecords: number | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '--out') {
+    if (a === '--db') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return {
+          ok: false,
+          message: 'error: --db requires a path (e.g. --db ./en_backup.db)',
+        };
+      }
+      dbPath = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--db=')) {
+      const tail = a.slice('--db='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --db= requires a non-empty path' };
+      }
+      dbPath = resolve(cwd, tail);
+    } else if (a === '--out') {
       const v = args[i + 1];
       if (v === undefined || v.startsWith('-')) {
         return {
@@ -121,36 +136,6 @@ function parseSnapshotArgs(
         return { ok: false, message: 'error: --out= requires a non-empty path' };
       }
       outPath = resolve(cwd, tail);
-    } else if (a === '--page-size') {
-      const v = args[i + 1];
-      const n = v !== undefined ? Number.parseInt(v, 10) : Number.NaN;
-      if (!Number.isFinite(n) || n < 1 || n > 250) {
-        return { ok: false, message: 'error: --page-size must be an integer 1–250' };
-      }
-      pageSize = n;
-      i++;
-    } else if (a?.startsWith('--page-size=')) {
-      const tail = a.slice('--page-size='.length);
-      const n = Number.parseInt(tail, 10);
-      if (!Number.isFinite(n) || n < 1 || n > 250) {
-        return { ok: false, message: 'error: --page-size must be an integer 1–250' };
-      }
-      pageSize = n;
-    } else if (a === '--sleep-ms') {
-      const v = args[i + 1];
-      const n = v !== undefined ? Number.parseInt(v, 10) : Number.NaN;
-      if (!Number.isFinite(n) || n < 0) {
-        return { ok: false, message: 'error: --sleep-ms must be a non-negative integer' };
-      }
-      sleepBetweenPagesMs = n;
-      i++;
-    } else if (a?.startsWith('--sleep-ms=')) {
-      const tail = a.slice('--sleep-ms='.length);
-      const n = Number.parseInt(tail, 10);
-      if (!Number.isFinite(n) || n < 0) {
-        return { ok: false, message: 'error: --sleep-ms must be a non-negative integer' };
-      }
-      sleepBetweenPagesMs = n;
     } else if (a === '--max-notes') {
       const v = args[i + 1];
       const n = v !== undefined ? Number.parseInt(v, 10) : Number.NaN;
@@ -171,53 +156,39 @@ function parseSnapshotArgs(
     }
   }
 
-  return { ok: true, snapshot: { outPath, pageSize, sleepBetweenPagesMs, maxRecords } };
-}
-
-async function runSnapshot(
-  parsed: SnapshotCliOk,
-  cwd: string,
-  streams: MainStreams,
-): Promise<number> {
-  await loadDotEnvFromCwd(cwd);
-  const token = process.env.EVERNOTE_DEVELOPER_TOKEN?.trim();
-  if (!token) {
-    streams.stderr.write(
-      'snapshot: missing EVERNOTE_DEVELOPER_TOKEN (set in environment or .env in cwd)\n',
-    );
-    return 2;
+  if (dbPath === undefined) {
+    return {
+      ok: false,
+      message:
+        'error: snapshot requires --db <path> (evernote-backup SQLite file, e.g. en_backup.db)',
+    };
   }
 
+  return { ok: true, snapshot: { dbPath, outPath, maxRecords } };
+}
+
+async function runSnapshot(parsed: SnapshotCliOk, streams: MainStreams): Promise<number> {
   try {
-    const fetchResult = await fetchAllNoteRecords({
-      token,
-      hostEnv: process.env.EVERNOTE_HOST,
-      pageSize: parsed.pageSize,
-      sleepBetweenPagesMs: parsed.sleepBetweenPagesMs,
-      maxRecords: parsed.maxRecords,
-    });
-    const { records, clientOpts, totalNotesFromApi, truncated } = fetchResult;
+    const readOpts =
+      parsed.maxRecords !== undefined ? { maxRecords: parsed.maxRecords } : undefined;
+    const { records, sourceRowCount } = readNoteRecordsFromEvernoteBackupDb(
+      parsed.dbPath,
+      readOpts,
+    );
 
-    if (!truncated && totalNotesFromApi !== undefined && totalNotesFromApi !== records.length) {
-      streams.stderr.write(
-        `snapshot: warning: Evernote reported totalNotes=${totalNotesFromApi} but snapshot has count=${records.length} (skipped rows without guid, concurrent edits while paging, or API semantics).\n`,
-      );
-    }
-
-    const envelope = buildSnapshotEnvelope(clientOpts.serviceHost, records);
+    const envelope = buildSnapshotEnvelope(SNAPSHOT_METADATA_HOST, records);
     await mkdir(dirname(parsed.outPath), { recursive: true });
     await writeSnapshotFile(parsed.outPath, envelope);
 
     const summary: Record<string, unknown> = {
       ok: true,
       path: parsed.outPath,
+      db: parsed.dbPath,
       count: records.length,
-      host: clientOpts.serviceHost,
+      host: SNAPSHOT_METADATA_HOST,
+      sourceRowCount,
     };
-    if (totalNotesFromApi !== undefined) {
-      summary.totalNotesFromApi = totalNotesFromApi;
-    }
-    if (truncated) {
+    if (parsed.maxRecords !== undefined && records.length < sourceRowCount) {
       summary.truncated = true;
     }
 
@@ -227,7 +198,7 @@ async function runSnapshot(
     const msg = e instanceof Error ? e.message : String(e);
     streams.stderr.write(`snapshot: ${msg}\n`);
     streams.stderr.write(
-      'snapshot: hint: verify EVERNOTE_DEVELOPER_TOKEN, EVERNOTE_HOST (production vs sandbox vs Yinxiang), and Evernote rate limits.\n',
+      'snapshot: hint: pass --db to your evernote-backup database (see https://github.com/vzhd1701/evernote-backup).\n',
     );
     return 2;
   }
@@ -264,20 +235,19 @@ function usage(): string {
     'Usage:',
     '  evernote-obsidian [--help|--version]',
     '  evernote-obsidian index [--vault <path>]',
-    '  evernote-obsidian snapshot [--out <path>] [--page-size <n>] [--sleep-ms <n>] [--max-notes <n>]',
+    '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',
     '',
     'Commands:',
     '  index      Build a read-only vault index (normalized titles must be unique).',
-    '  snapshot   Fetch Evernote note metadata (GUID, title, updated) and write a JSON snapshot.',
+    '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
     '',
     'Options:',
     '  --vault       Vault root directory (default: ./data relative to cwd)',
+    '  --db          Path to evernote-backup SQLite database (required for snapshot)',
     '  --out         Snapshot JSON path (default: ./out/evernote-notes.json)',
-    '  --page-size   findNotesMetadata page size, 1–250 (default: 250)',
-    '  --sleep-ms    Pause between pages to ease rate limits (default: 0)',
-    '  --max-notes   Stop after N newest notes (optional cap for iteration / large accounts)',
+    '  --max-notes   Stop after N notes (optional cap; notes ordered by title)',
     '',
-    'Env (snapshot): EVERNOTE_DEVELOPER_TOKEN (required), EVERNOTE_HOST (optional, see .env.example)',
+    '  evernote-backup: https://github.com/vzhd1701/evernote-backup',
     '',
   ].join('\n');
 }

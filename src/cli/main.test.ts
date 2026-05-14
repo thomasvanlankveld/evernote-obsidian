@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { Writable } from 'node:stream';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -112,20 +113,52 @@ describe('cli main', () => {
     assert.match(err(), /^index: /);
   });
 
-  it('snapshot exits 2 when EVERNOTE_DEVELOPER_TOKEN is missing', async () => {
-    const prev = process.env.EVERNOTE_DEVELOPER_TOKEN;
-    delete process.env.EVERNOTE_DEVELOPER_TOKEN;
-    const emptyCwd = await mkdtemp(join(tmpdir(), 'evernote-obs-snapshot-test-'));
+  it('snapshot exits 2 when --db is missing', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['snapshot'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--db/);
+  });
+
+  it('snapshot exits 0 and writes JSON envelope', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-snapshot-cli-'));
+    const dbPath = join(dir, 'en.db');
+    const outPath = join(dir, 'evernote-notes.json');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE notes(
+        guid TEXT PRIMARY KEY,
+        title TEXT,
+        notebook_guid TEXT,
+        is_active BOOLEAN,
+        raw_note BLOB
+      );
+      INSERT INTO notes(guid, title, is_active) VALUES ('g1', 'Hello', 1);
+    `);
+    db.close();
     try {
-      const { streams, err } = makeStreams();
-      const code = await main(['snapshot'], streams, { cwd: emptyCwd });
-      assert.equal(code, 2);
-      assert.match(err(), /EVERNOTE_DEVELOPER_TOKEN/);
+      const { streams, out, err } = makeStreams();
+      const code = await main(['snapshot', '--db', dbPath, '--out', outPath], streams, {
+        cwd: dir,
+      });
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summary = JSON.parse(out()) as { ok: boolean; count: number; host: string };
+      assert.equal(summary.ok, true);
+      assert.equal(summary.count, 1);
+      assert.equal(summary.host, 'evernote-backup');
+
+      const fileJson = JSON.parse(await readFile(outPath, 'utf8')) as {
+        version: number;
+        host: string;
+        notes: { guid: string; title: string }[];
+      };
+      assert.equal(fileJson.version, 1);
+      assert.equal(fileJson.host, 'evernote-backup');
+      assert.equal(fileJson.notes.length, 1);
+      assert.equal(fileJson.notes[0]?.guid, 'g1');
     } finally {
-      await rm(emptyCwd, { recursive: true, force: true });
-      if (prev !== undefined) {
-        process.env.EVERNOTE_DEVELOPER_TOKEN = prev;
-      }
+      await rm(dir, { recursive: true, force: true });
     }
   });
 

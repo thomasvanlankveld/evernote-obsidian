@@ -6,7 +6,7 @@ Personal tooling to move notes from Evernote into Obsidian when the stock import
 
 The usual flow is: export `.enex` from Evernote, import with Obsidian’s [Importer](https://obsidian.md/help/import/evernote). That works for content, but note-to-note links often stay as `evernote:///…` URLs because the export does not carry enough stable identifiers for importers to rewrite them—see [obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306). For a large vault with many internal links, fixing that by hand is not practical.
 
-A complementary approach is to use **Evernote’s API** (or other metadata sources) to build a mapping from those URLs or note identities to the Markdown files Obsidian actually created, then rewrite links in bulk. This repo is a place to grow that kind of automation.
+A complementary approach is to use **metadata from a local Evernote backup** ([evernote-backup](https://github.com/vzhd1701/evernote-backup)) to build a mapping from those URLs or note identities to the Markdown files Obsidian actually created, then rewrite links in bulk. This repo is a place to grow that kind of automation.
 
 ## Prerequisites
 
@@ -18,23 +18,19 @@ A complementary approach is to use **Evernote’s API** (or other metadata sourc
 After `npm install` and `npm run build`, the **`evernote-obsidian`** CLI is available (the npm package name matches the tool; see `package.json` `bin`).
 
 - **`evernote-obsidian index [--vault <path>]`** — Walk the vault (default `./data`) and report whether normalized titles are unique enough for correlation.
-- **`evernote-obsidian snapshot [--out <path>] [--page-size <n>] [--sleep-ms <n>] [--max-notes <n>]`** — Call Evernote’s API and write a JSON snapshot of note metadata (GUID, title, last updated). Default output: `./out/evernote-notes.json` (the `out/` directory is gitignored). Use **`--max-notes`** to cap how many newest notes you pull (handy when iterating against production).
+- **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).
 
-Copy `.env.example` to `.env` and set **`EVERNOTE_DEVELOPER_TOKEN`** before `snapshot`. Optional **`EVERNOTE_HOST`** selects production (`www.evernote.com`), sandbox, or Yinxiang (`app.yinxiang.com`).
+Create the database with upstream’s **`evernote-backup init-db`** / **`sync`** (their README covers OAuth and Yinxiang). Then point **`--db`** at that file (often `en_backup.db`).
 
-**`.env` loading** (for `snapshot`) is a small v1 parser: `KEY=value` lines, optional `#` comments, optional single-line quotes. It is **not** full dotenv (e.g. unquoted `#` inside values, `export KEY=`, and multiline values are not supported).
-
-For **very large accounts**, prefer running `snapshot` during a **quiet period**: paging is ordered by `updated` descending; concurrent edits can in theory shift results between pages (the CLI may warn if Evernote’s `totalNotes` does not match the written row count).
+**Implementation note:** Node’s built-in **`node:sqlite`** is used in **read-only** mode. As of Node 24 it may log an experimental-feature warning; the reader only runs plain SQL (`guid`, `title` from the `notes` table).
 
 ## Evernote snapshot: limits
 
-These boundaries are intentional for an early, personal migration tool; they are not a full Evernote client.
+These boundaries are intentional for an early, personal migration tool.
 
-- **Authentication:** Only **`EVERNOTE_DEVELOPER_TOKEN`** is supported today. **OAuth** and other flows are not implemented in this repo yet.
-- **Account scope:** Metadata is read from the **primary personal NoteStore** returned for that token. **Evernote Business** and other secondary stores are not separately enumerated in this phase.
-- **What is fetched:** **Metadata only** (GUID, title, `updated` timestamp)—not full note bodies or resources. Pagination uses Evernote’s `findNotesMetadata`; use **`--sleep-ms`** if you hit rate limits.
-- **SDK:** The npm package **`evernote`** is Evernote’s official JavaScript SDK around the Thrift API; it is **maintenance-frozen** upstream. If Evernote changes or restricts the classic API, this path may need revisiting.
-- **Evernote policy:** Access via developer tokens is subject to Evernote’s own product and developer policies; if tokens are unavailable for your account, you will need another metadata source (not covered here yet).
+- **Source:** Only databases produced by **[evernote-backup](https://github.com/vzhd1701/evernote-backup)** with the expected **`notes`** table are supported. Other SQLite exports are rejected with a clear error.
+- **Rows included:** Non-trashed notes (`is_active` not `0`) with non-empty `guid` and `title`. Rows still missing `is_active` (pending sync in the backup tool) are treated as active.
+- **`updated` field:** Evernote’s update time is stored inside Python-pickled blobs in that database, which this CLI does not decode. Snapshot JSON uses the sentinel timestamp **`1970-01-01T00:00:00.000Z`** for every row; later pipeline phases that only need **title ↔ GUID** correlation are unaffected.
 
 ## Restoring `data/` on a new machine
 
@@ -42,8 +38,7 @@ These boundaries are intentional for an early, personal migration tool; they are
 
 ## Security
 
-- Never commit Evernote developer tokens or `.enex` files that contain private notes unless this repo is strictly private and you accept the risk.
-- Prefer environment variables or a local `.env` (gitignored) for credentials; see **`.env.example`** for variable names used by the CLI.
+- Never commit a backup **`.db`** file, GitHub tokens, or `.enex` exports that contain private notes unless this repo is strictly private and you accept the risk.
 
 ## Contributing
 

@@ -2,15 +2,13 @@
  * Public library entry for vault indexing, Evernote metadata, link extraction, correlation, and rewrite.
  */
 
-export type { EvernoteClientOptionsFromHost } from './evernote/evernoteHost.ts';
-export { evernoteClientOptionsFromHost } from './evernote/evernoteHost.ts';
-export {
-  evernoteUpdatedMsToIso,
-  type FetchNoteRecordsOptions,
-  type FetchNoteRecordsResult,
-  fetchAllNoteRecords,
-} from './evernote/fetchNoteRecords.ts';
 export type { EvernoteNoteSnapshot, NoteRecord } from './evernote/noteRecord.ts';
+export {
+  type ReadEvernoteBackupDbOptions,
+  type ReadEvernoteBackupDbResult,
+  readNoteRecordsFromEvernoteBackupDb,
+  UPDATED_UNKNOWN_ISO_SENTINEL,
+} from './evernote/readEvernoteBackupDb.ts';
 export {
   buildSnapshotEnvelope,
   parseSnapshotJson,
