@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-14 (Phase 4: link extraction; `links` CLI)
+**Last updated:** 2026-05-14 (Phase 5: correlation; `correlate` CLI)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -87,10 +87,16 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 
 ### Phase 5 — Correlation
 
-- Join Evernote records to vault index by **normalized title**, plus **user override file** for collisions and renames.
-- Emit **link map**: **GUID → vault-relative path** to the target note file (all extracted note URLs normalize to a GUID). Rewrites combine this path with the **alias** from extraction into **`[[path|alias]]`**.
+- [x] Join Evernote records to vault index by **normalized title**, plus **user override file** for collisions and renames.
+- [x] Emit **link map**: **GUID → vault-relative path** to the target note file (all extracted note URLs normalize to a GUID). Rewrites combine this path with the **alias** from extraction into **`[[path|alias]]`**.
 
-**Deliverable:** `link-map.json` (default gitignored unless sanitized).
+**Deliverable:** `link-map.json` (default gitignored unless sanitized). ✅
+
+**Phase 5 implementation notes**
+
+- **CLI:** `evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]` — default **`./out/link-map.json`**, vault default **`./data`**.
+- **Overrides JSON:** `{ "version": 1, "byGuid": { "<guid>": "<vault-relative-path>" } }` — paths must match an indexed `.md` path (POSIX separators). **Evernote duplicate titles** (multiple GUIDs sharing the same normalized title) require **`byGuid` for every GUID** in that group.
+- **Failure cases (exit 1, JSON on stderr):** vault index collisions (same as `index`); **unmatched** snapshot titles; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without full overrides.
 
 ### Phase 6 — Rewrite
 

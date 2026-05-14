@@ -1,9 +1,25 @@
 Be concise.
 
-Git policy (agents):
-- **`main`, PRs, worktrees:** No direct pushes to **`main`**; ship with a **PR** from a **feature branch**. **Agents:** run **`git worktree add .worktrees/<slug>/ -b feat/<topic> origin/main`** (or reuse a tree on that branch), then keep **all** edits, **`git commit`**, and the **workspace root** in that **linked** checkout—nest under **`.worktrees/`** in this repo (gitignored), not a sibling checkout outside the workspace root—see [git worktree](https://git-scm.com/docs/git-worktree).
-- Prefer `git merge` (or PR) over rebase.
-- Never rewrite remote/shared history: no `rebase`, `reset --hard`, `commit --amend`, or `push --force`—unless explicitly requested in this chat.
-- **Git / `gh`:** maintainers often use **`gh auth login`** + **`gh auth setup-git`** (see [CONTRIBUTING.md](CONTRIBUTING.md)); credentials are outside the repo.
+## Git — automated agents (Cursor, etc.)
 
-Design docs / EDD workflow for agents: [docs/edds/AGENTS.md](docs/edds/AGENTS.md).
+The worktree rule is easy to miss because it sounds like “use a branch anywhere.” **Agents must use a linked worktree under this repo’s `.worktrees/` and do all implementation work there**, not only “commit from a feature branch” while editing in the primary clone.
+
+**Before the first edit or `git commit` on a task**
+
+1. From the checkout that contains `.git`, run  
+   `git worktree add .worktrees/<slug>/ -b feat/<topic> origin/main`  
+   (or `cd` into an existing `.worktrees/<slug>/` already on your branch). Path must be **inside** this repository at `.worktrees/…` (gitignored), not a sibling folder outside the repo.
+2. **Point the whole agent session at that directory:** workspace root, file ops, and terminals. In Cursor, use **Move agent to root** (MCP) or **File → Open Folder** on `.worktrees/<slug>/` so the chat’s default cwd matches where you edit.
+3. Run tests, edit, and commit only from that tree; open the PR from its branch.
+
+**Humans:** optional; contribute from the root clone if you prefer.
+
+**Everyone — `main` and history:** No direct push to `main`; ship via PR. Prefer `git merge` over rebase. Do not rewrite shared history (`rebase`, `reset --hard`, `commit --amend`, `push --force`) unless this chat explicitly requests it.
+
+**Why there is no CI “worktree check”:** GitHub only sees commits, not which folder your editor used. Compliance is self-service: this file plus `.cursor/rules/agent-git-worktree.mdc`.
+
+**`gh` / credentials:** [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## EDD workflow (agents)
+
+[docs/edds/AGENTS.md](docs/edds/AGENTS.md).

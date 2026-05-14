@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -193,5 +193,88 @@ describe('cli main', () => {
     const code = await main(['links', '--nope'], streams);
     assert.equal(code, 2);
     assert.match(err(), /unknown links flag/);
+  });
+
+  it('correlate exits 2 when --snapshot is missing', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['correlate'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--snapshot/);
+  });
+
+  it('correlate exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['correlate', '--snapshot', '/tmp/x.json', '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown correlate flag/);
+  });
+
+  it('correlate exits 0 and writes link-map.json', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-correlate-cli-'));
+    const snapPath = join(dir, 'evernote-notes.json');
+    const outPath = join(dir, 'link-map.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [
+        { guid: 'g1', title: 'First', updated: '1970-01-01T00:00:00.000Z' },
+        { guid: 'g2', title: 'Second Note', updated: '1970-01-01T00:00:00.000Z' },
+        { guid: 'g3', title: 'Quoted Title', updated: '1970-01-01T00:00:00.000Z' },
+      ],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['correlate', '--vault', uniqueFixtureVault, '--snapshot', snapPath, '--out', outPath],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summary = JSON.parse(out()) as { ok: boolean; count: number; path: string };
+      assert.equal(summary.ok, true);
+      assert.equal(summary.count, 3);
+
+      const map = JSON.parse(await readFile(outPath, 'utf8')) as {
+        version: number;
+        guidToPath: Record<string, string>;
+      };
+      assert.equal(map.version, 1);
+      assert.equal(map.guidToPath.g1, 'first.md');
+      assert.equal(map.guidToPath.g2, 'sub/second note.md');
+      assert.equal(map.guidToPath.g3, 'third.md');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('correlate exits 1 when a snapshot title has no vault match', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-correlate-unmatched-'));
+    const snapPath = join(dir, 'evernote-notes.json');
+    const outPath = join(dir, 'link-map.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [{ guid: 'gx', title: 'Nope Nope', updated: '1970-01-01T00:00:00.000Z' }],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['correlate', '--vault', uniqueFixtureVault, '--snapshot', snapPath, '--out', outPath],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 1);
+      assert.equal(out(), '');
+      const j = JSON.parse(err()) as { ok: boolean; unmatched: { guid: string }[] };
+      assert.equal(j.ok, false);
+      assert.equal(j.unmatched.length, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

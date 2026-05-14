@@ -20,6 +20,8 @@ After `npm install` and `npm run build`, the **`evernote-obsidian`** CLI is avai
 - **`evernote-obsidian index [--vault <path>]`** — Walk the vault (default `./data`) and report whether normalized titles are unique enough for correlation.
 - **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).
 
+- **`evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]`** — Join snapshot rows to vault Markdown files using the same **normalized title** rules as `index`, and write **`./out/link-map.json`** by default (GUID → vault-relative path). Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping.
+
 Create the database with upstream’s **`evernote-backup init-db`** / **`sync`** (their README covers OAuth and Yinxiang). Then point **`--db`** at that file (often `en_backup.db`).
 
 **Implementation note:** Node’s built-in **`node:sqlite`** is used in **read-only** mode. As of Node 24 it may log an experimental-feature warning; the reader only runs plain SQL (`guid`, `title` from the `notes` table).
@@ -46,7 +48,7 @@ Local build commands and **optional** Git / GitHub notes (no prescribed credenti
 
 ## Next steps (for later implementation)
 
-Rough direction only: correlate snapshot metadata with imported Markdown (by title, optional overrides, or other sidecars), produce a link map, then rewrite `evernote:///…` (and shard URLs) to `[[wikilinks]]` or Markdown links that match your vault layout. See [docs/edds/2026-05-10-evernote-obsidian-migration.edd.md](docs/edds/2026-05-10-evernote-obsidian-migration.edd.md) for phased detail.
+Rough direction only: **rewrite** `evernote:///…` (and shard URLs) using the link map (`correlate` output), dry-run and backups, then golden tests. See [docs/edds/2026-05-10-evernote-obsidian-migration.edd.md](docs/edds/2026-05-10-evernote-obsidian-migration.edd.md) for phased detail.
 
 ## Context
 
