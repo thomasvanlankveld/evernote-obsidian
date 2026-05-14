@@ -19,6 +19,10 @@ describe('normalizeTitle', () => {
     assert.equal(normalizeTitle(nfdCoffee), normalizeTitle('caf\u00E9'));
   });
 
+  it('lowercases unicode letters beyond ASCII', () => {
+    assert.equal(normalizeTitle('Straße'), 'straße');
+  });
+
   it('returns empty when the title is only whitespace', () => {
     assert.equal(normalizeTitle('   \t  '), '');
   });
