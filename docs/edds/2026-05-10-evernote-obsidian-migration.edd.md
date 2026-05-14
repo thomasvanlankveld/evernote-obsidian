@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-14 (Phase 5: correlation; `correlate` CLI)
+**Last updated:** 2026-05-14 (Phase 6: rewrite; `rewrite` CLI)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -100,8 +100,8 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 
 ### Phase 6 — Rewrite
 
-- CLI: **`--vault`** (default `./data`), **`--map`**, **`--dry-run`**, **`--out-dir`** vs **`--in-place`** (with optional backup copy).
-- Replace Evernote **note** URLs with **`[[path|alias]]`** (vault-relative path + captured alias); preserve surrounding Markdown where possible.
+- [x] CLI: **`--vault`** (default `./data`), **`--map`**, **`--dry-run`**, **`--out-dir`** vs **`--in-place`** (with optional **`--backup`**).
+- [x] Replace Evernote **note** URLs with **`[[path|alias]]`** (vault-relative path + captured alias); preserve surrounding Markdown where possible.
 
 ### Phase 7 — Hardening
 

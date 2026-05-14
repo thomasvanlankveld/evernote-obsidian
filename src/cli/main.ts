@@ -2,12 +2,16 @@
  * CLI entrypoint for the Evernote → Obsidian link-repair pipeline.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import {
   correlateSnapshotToGuidPaths,
   vaultIndexResultToCorrelationInput,
 } from '../correlation/correlate.ts';
-import { buildLinkMapFile } from '../correlation/linkMapFile.ts';
+import {
+  buildLinkMapFile,
+  LinkMapParseError,
+  parseLinkMapJson,
+} from '../correlation/linkMapFile.ts';
 import { parseCorrelationOverridesJson } from '../correlation/overridesFile.ts';
 import { readNoteRecordsFromEvernoteBackupDb } from '../evernote/readEvernoteBackupDb.ts';
 import {
@@ -16,7 +20,12 @@ import {
   writeSnapshotFile,
 } from '../evernote/snapshotFile.ts';
 import { scanVaultForEvernoteLinks } from '../vault/extractEvernoteLinks.ts';
-import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
+import { rewriteMarkdownWithGuidMap } from '../vault/rewriteEvernoteLinks.ts';
+import {
+  buildVaultIndex,
+  VaultIndexRootError,
+  walkVaultMarkdownFiles,
+} from '../vault/vaultIndex.ts';
 import { readCliPackageVersion } from './packageVersion.ts';
 
 export interface MainStreams {
@@ -83,6 +92,15 @@ export async function main(
       return 2;
     }
     return runCorrelate(parsed.correlate, streams);
+  }
+
+  if (cmd === 'rewrite') {
+    const parsed = parseRewriteArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runRewrite(parsed.rewrite, streams);
   }
 
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);
@@ -353,6 +371,128 @@ function parseCorrelateArgs(
   };
 }
 
+interface RewriteCliOk {
+  vaultRoot: string;
+  mapPath: string;
+  mode: 'dry-run' | 'out-dir' | 'in-place';
+  outDir?: string | undefined;
+  backup?: boolean | undefined;
+}
+
+function parseRewriteArgs(
+  args: readonly string[],
+  cwd: string,
+): { ok: true; rewrite: RewriteCliOk } | { ok: false; message: string } {
+  const defaultVault = resolve(cwd, 'data');
+  let vaultRoot = defaultVault;
+  let mapPath: string | undefined;
+  let explicitDryRun = false;
+  let outDir: string | undefined;
+  let inPlace = false;
+  let backup = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--vault') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return { ok: false, message: 'error: --vault requires a path (e.g. --vault ./data)' };
+      }
+      vaultRoot = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--vault=')) {
+      const tail = a.slice('--vault='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --vault= requires a non-empty path' };
+      }
+      vaultRoot = resolve(cwd, tail);
+    } else if (a === '--map') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return {
+          ok: false,
+          message: 'error: --map requires a path (e.g. --map ./out/link-map.json)',
+        };
+      }
+      mapPath = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--map=')) {
+      const tail = a.slice('--map='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --map= requires a non-empty path' };
+      }
+      mapPath = resolve(cwd, tail);
+    } else if (a === '--dry-run') {
+      explicitDryRun = true;
+    } else if (a === '--out-dir') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return {
+          ok: false,
+          message: 'error: --out-dir requires a path (e.g. --out-dir ./out/rewritten-vault)',
+        };
+      }
+      outDir = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--out-dir=')) {
+      const tail = a.slice('--out-dir='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --out-dir= requires a non-empty path' };
+      }
+      outDir = resolve(cwd, tail);
+    } else if (a === '--in-place') {
+      inPlace = true;
+    } else if (a === '--backup') {
+      backup = true;
+    } else {
+      return { ok: false, message: `error: unknown rewrite flag: ${a}` };
+    }
+  }
+
+  if (mapPath === undefined) {
+    return {
+      ok: false,
+      message:
+        'error: rewrite requires --map <path> (link map JSON from correlate, e.g. ./out/link-map.json)',
+    };
+  }
+
+  if (inPlace && outDir !== undefined) {
+    return { ok: false, message: 'error: use only one of --in-place or --out-dir' };
+  }
+
+  if (explicitDryRun && (inPlace || outDir !== undefined)) {
+    return {
+      ok: false,
+      message: 'error: --dry-run cannot be combined with --in-place or --out-dir',
+    };
+  }
+
+  if (backup && !inPlace) {
+    return { ok: false, message: 'error: --backup is only valid with --in-place' };
+  }
+
+  let mode: RewriteCliOk['mode'];
+  if (inPlace) {
+    mode = 'in-place';
+  } else if (outDir !== undefined) {
+    mode = 'out-dir';
+  } else {
+    mode = 'dry-run';
+  }
+
+  return {
+    ok: true,
+    rewrite: {
+      vaultRoot,
+      mapPath,
+      mode,
+      outDir: mode === 'out-dir' ? outDir : undefined,
+      backup: backup ? true : undefined,
+    },
+  };
+}
+
 async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promise<number> {
   try {
     const index = await buildVaultIndex(parsed.vaultRoot);
@@ -418,6 +558,90 @@ async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promi
     }
     const msg = e instanceof Error ? e.message : String(e);
     streams.stderr.write(`correlate: ${msg}\n`);
+    return 2;
+  }
+}
+
+async function runRewrite(parsed: RewriteCliOk, streams: MainStreams): Promise<number> {
+  try {
+    const rawMap = await readFile(parsed.mapPath, 'utf8');
+    const linkMap = parseLinkMapJson(rawMap);
+    const guidToPath = new Map<string, string>(Object.entries(linkMap.guidToPath));
+
+    const files = await walkVaultMarkdownFiles(parsed.vaultRoot);
+    let filesScanned = 0;
+    let filesChanged = 0;
+    let replacements = 0;
+    let skippedUnmapped = 0;
+
+    for (const abs of files) {
+      filesScanned++;
+      const content = await readFile(abs, 'utf8');
+      const {
+        content: next,
+        replaced,
+        skippedUnmapped: skipped,
+      } = rewriteMarkdownWithGuidMap(content, guidToPath);
+      skippedUnmapped += skipped;
+      if (next === content) {
+        continue;
+      }
+      filesChanged++;
+      replacements += replaced;
+
+      if (parsed.mode === 'dry-run') {
+        continue;
+      }
+
+      if (parsed.mode === 'out-dir') {
+        const outRoot = parsed.outDir;
+        if (outRoot === undefined || outRoot === '') {
+          streams.stderr.write('rewrite: --out-dir requires a non-empty path\n');
+          return 2;
+        }
+        const rel = relative(parsed.vaultRoot, abs).split('\\').join('/');
+        const dest = join(outRoot, rel);
+        await mkdir(dirname(dest), { recursive: true });
+        await writeFile(dest, next, 'utf8');
+        continue;
+      }
+
+      if (parsed.backup === true) {
+        const bak = `${abs}.evernote-obsidian.bak`;
+        await writeFile(bak, content, 'utf8');
+      }
+      await writeFile(abs, next, 'utf8');
+    }
+
+    streams.stdout.write(
+      `${JSON.stringify(
+        {
+          ok: true,
+          mode: parsed.mode,
+          vault: parsed.vaultRoot,
+          map: parsed.mapPath,
+          filesScanned,
+          filesChanged,
+          replacements,
+          skippedUnmapped,
+          wroteFiles: parsed.mode !== 'dry-run',
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return 0;
+  } catch (e) {
+    if (e instanceof VaultIndexRootError) {
+      streams.stderr.write(`${e.message}\n`);
+      return 2;
+    }
+    if (e instanceof LinkMapParseError) {
+      streams.stderr.write(`rewrite: ${e.message}\n`);
+      return 2;
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    streams.stderr.write(`rewrite: ${msg}\n`);
     return 2;
   }
 }
@@ -521,15 +745,22 @@ function usage(): string {
     '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',
     '  evernote-obsidian links [--vault <path>] [--out <path>] [--skip-other-evernote-hosts]',
     '  evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]',
+    '  evernote-obsidian rewrite --map <path> [--vault <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '',
     'Commands:',
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
     '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
     '  correlate  Join snapshot GUIDs to vault paths by normalized title; optional overrides JSON.',
+    '  rewrite    Replace Evernote note URLs with Obsidian wikilinks using link-map.json from correlate.',
     '',
     'Options:',
     '  --vault                        Vault root directory (default: ./data relative to cwd)',
+    '  --map                          Path to link map JSON (required for rewrite)',
+    '  --dry-run                      Rewrite preview only (default when neither --out-dir nor --in-place)',
+    '  --out-dir                      Write changed Markdown files under this directory (mirrors vault paths)',
+    '  --in-place                     Overwrite Markdown in the vault (use with care)',
+    '  --backup                       With --in-place, write <file>.evernote-obsidian.bak before overwriting',
     '  --snapshot                     Path to Evernote snapshot JSON (required for correlate)',
     '  --overrides                    Optional JSON file: { "version": 1, "byGuid": { "<guid>": "<path>" } }',
     '  --skip-other-evernote-hosts    Omit non-shard *.evernote.com URLs from the links report',

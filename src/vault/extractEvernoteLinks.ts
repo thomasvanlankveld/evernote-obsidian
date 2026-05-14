@@ -144,21 +144,36 @@ export function classifyEvernoteUrl(url: string): 'note' | 'other-evernote' | nu
 }
 
 interface Span {
-  start: number;
-  end: number;
+  /** Start/end of the URL token inside the source (for overlap detection and `links` locations). */
+  urlStart: number;
+  urlEnd: number;
+  /** Region to replace when rewriting (full `[]()`, `[[…]]`, `<…>`, or bare URL). */
+  replaceStart: number;
+  replaceEnd: number;
   rawUrl: string;
   alias: string | null;
+}
+
+/** Merged Evernote-related URL spans after the same overlap rules as {@link extractEvernoteLinksFromMarkdown}. */
+export interface MergedEvernoteUrlSpan {
+  readonly urlStart: number;
+  readonly urlEnd: number;
+  readonly replaceStart: number;
+  readonly replaceEnd: number;
+  readonly rawUrl: string;
+  readonly alias: string | null;
+  readonly kind: 'note' | 'other-evernote';
 }
 
 function addSpan(spans: Span[], span: Span): void {
   spans.push(span);
 }
 
-/** Prefer structured captures (with alias), then longer spans, when ranges overlap. */
+/** Prefer structured captures (with alias), then longer spans, when URL ranges overlap. */
 function dropOverlappingSpans(spans: Span[]): Span[] {
   const sorted = [...spans].sort((a, b) => {
-    if (a.start !== b.start) {
-      return a.start - b.start;
+    if (a.urlStart !== b.urlStart) {
+      return a.urlStart - b.urlStart;
     }
     if (a.alias != null && b.alias == null) {
       return -1;
@@ -166,18 +181,18 @@ function dropOverlappingSpans(spans: Span[]): Span[] {
     if (b.alias != null && a.alias == null) {
       return 1;
     }
-    return b.end - b.start - (a.end - a.start);
+    return b.urlEnd - b.urlStart - (a.urlEnd - a.urlStart);
   });
   const kept: Span[] = [];
   outer: for (const s of sorted) {
     for (const k of kept) {
-      if (!(s.end <= k.start || s.start >= k.end)) {
+      if (!(s.urlEnd <= k.urlStart || s.urlStart >= k.urlEnd)) {
         continue outer;
       }
     }
     kept.push(s);
   }
-  return kept.sort((a, b) => a.start - b.start);
+  return kept.sort((a, b) => a.urlStart - b.urlStart);
 }
 
 function maskRanges(content: string, ranges: readonly [number, number][]): string {
@@ -201,12 +216,9 @@ const BARE_NOTE = /\b(evernote:[^\s)\]]+|https:\/\/www\.evernote\.com\/shard\/[^
 const BARE_OTHER_EVERNOTE = /\bhttps?:\/\/[a-z0-9.-]*evernote\.com(?:\/[^\s)\]]*)?/gi;
 
 /**
- * Scan a single Markdown file for Evernote note URLs and other `*.evernote.com` links.
+ * Collect merged Evernote URL spans (same discovery rules as the `links` command).
  */
-export function extractEvernoteLinksFromMarkdown(
-  content: string,
-  fileRelPath: string,
-): BrokenLink[] {
+export function mergeEvernoteUrlSpans(content: string): MergedEvernoteUrlSpan[] {
   const spans: Span[] = [];
 
   for (const m of content.matchAll(MD_LINK)) {
@@ -215,10 +227,13 @@ export function extractEvernoteLinksFromMarkdown(
     if (!url || cls === null) {
       continue;
     }
-    const start = (m.index ?? 0) + m[0].indexOf(url);
+    const blockStart = m.index ?? 0;
+    const urlStart = blockStart + m[0].indexOf(url);
     addSpan(spans, {
-      start,
-      end: start + url.length,
+      urlStart,
+      urlEnd: urlStart + url.length,
+      replaceStart: blockStart,
+      replaceEnd: blockStart + m[0].length,
       rawUrl: url,
       alias: m[1]?.trim() ? m[1] : null,
     });
@@ -237,10 +252,13 @@ export function extractEvernoteLinksFromMarkdown(
     const alias = m[2]?.trim() ? m[2] : null;
     const innerOffset = m[0].indexOf(rawTarget);
     const trimLead = rawTarget.length - rawTarget.trimStart().length;
-    const start = (m.index ?? 0) + innerOffset + trimLead;
+    const blockStart = m.index ?? 0;
+    const urlStart = blockStart + innerOffset + trimLead;
     addSpan(spans, {
-      start,
-      end: start + target.length,
+      urlStart,
+      urlEnd: urlStart + target.length,
+      replaceStart: blockStart,
+      replaceEnd: blockStart + m[0].length,
       rawUrl: target,
       alias,
     });
@@ -252,11 +270,19 @@ export function extractEvernoteLinksFromMarkdown(
     if (!url || cls === null) {
       continue;
     }
-    const start = (m.index ?? 0) + 1;
-    addSpan(spans, { start, end: start + url.length, rawUrl: url, alias: null });
+    const blockStart = m.index ?? 0;
+    const urlStart = blockStart + 1;
+    addSpan(spans, {
+      urlStart,
+      urlEnd: urlStart + url.length,
+      replaceStart: blockStart,
+      replaceEnd: blockStart + m[0].length,
+      rawUrl: url,
+      alias: null,
+    });
   }
 
-  const covered: [number, number][] = spans.map((s) => [s.start, s.end]);
+  const covered: [number, number][] = spans.map((s) => [s.urlStart, s.urlEnd]);
   const masked = maskRanges(content, covered);
 
   for (const m of masked.matchAll(BARE_NOTE)) {
@@ -264,8 +290,16 @@ export function extractEvernoteLinksFromMarkdown(
     if (!url) {
       continue;
     }
-    const start = m.index ?? 0;
-    addSpan(spans, { start, end: start + url.length, rawUrl: url, alias: null });
+    const urlStart = m.index ?? 0;
+    const urlEnd = urlStart + url.length;
+    addSpan(spans, {
+      urlStart,
+      urlEnd,
+      replaceStart: urlStart,
+      replaceEnd: urlEnd,
+      rawUrl: url,
+      alias: null,
+    });
   }
 
   for (const m of masked.matchAll(BARE_OTHER_EVERNOTE)) {
@@ -273,27 +307,60 @@ export function extractEvernoteLinksFromMarkdown(
     if (!url || classifyEvernoteUrl(url) !== 'other-evernote') {
       continue;
     }
-    const start = m.index ?? 0;
-    addSpan(spans, { start, end: start + url.length, rawUrl: url, alias: null });
+    const urlStart = m.index ?? 0;
+    const urlEnd = urlStart + url.length;
+    addSpan(spans, {
+      urlStart,
+      urlEnd,
+      replaceStart: urlStart,
+      replaceEnd: urlEnd,
+      rawUrl: url,
+      alias: null,
+    });
   }
 
   const merged = dropOverlappingSpans(spans);
 
-  const out: BrokenLink[] = [];
+  const out: MergedEvernoteUrlSpan[] = [];
   for (const s of merged) {
     const kind = classifyEvernoteUrl(s.rawUrl);
     if (kind === null) {
       continue;
     }
-    const loc = offsetToLineColumn(content, s.start);
-    const parsedGuid = kind === 'note' ? tryParseNoteGuidFromUrl(s.rawUrl) : null;
+    out.push({
+      urlStart: s.urlStart,
+      urlEnd: s.urlEnd,
+      replaceStart: s.replaceStart,
+      replaceEnd: s.replaceEnd,
+      rawUrl: s.rawUrl,
+      alias: s.alias,
+      kind,
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Scan a single Markdown file for Evernote note URLs and other `*.evernote.com` links.
+ */
+export function extractEvernoteLinksFromMarkdown(
+  content: string,
+  fileRelPath: string,
+): BrokenLink[] {
+  const merged = mergeEvernoteUrlSpans(content);
+
+  const out: BrokenLink[] = [];
+  for (const s of merged) {
+    const loc = offsetToLineColumn(content, s.urlStart);
+    const parsedGuid = s.kind === 'note' ? tryParseNoteGuidFromUrl(s.rawUrl) : null;
     out.push({
       file: fileRelPath,
       location: loc,
       rawUrl: s.rawUrl,
       parsedGuid,
       alias: s.alias,
-      kind,
+      kind: s.kind,
     });
   }
 
