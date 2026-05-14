@@ -12,6 +12,7 @@ A complementary approach is to use **Evernote’s API** (or other metadata sourc
 
 - [nvm](https://github.com/nvm-sh/nvm) (or another Node version manager you prefer)
 - Node **24** (see `.nvmrc`)
+- **[direnv](https://direnv.net/)** (optional) — only if you use the GitHub token layout below for `gh` / HTTPS `git`
 
 ## Commands (implemented so far)
 
@@ -44,6 +45,26 @@ These boundaries are intentional for an early, personal migration tool; they are
 
 - Never commit Evernote developer tokens or `.enex` files that contain private notes unless this repo is strictly private and you accept the risk.
 - Prefer environment variables or a local `.env` (gitignored) for credentials; see **`.env.example`** for variable names used by the CLI.
+
+### GitHub (`gh` / Git over HTTPS)
+
+Optional: use a **fine-grained personal access token** scoped to **this repository only**, with the smallest permission set you need (for example **Contents** and **Pull requests**, plus **Issues** if you want normal PR thread comments). That keeps automation and local tools off **full** `gh auth login` access to every repo your account can reach.
+
+Put the token **outside** the project tree (narrower blast radius if something reads the workspace), for example `~/.config/gh/evernote-obsidian.env`:
+
+```text
+GH_TOKEN=github_pat_xxxxxxxx
+```
+
+Use **`chmod 600`** on that file.
+
+With **direnv**, the committed root **`.envrc`** loads that file using a single line (no secrets in git; no `export` in the env file — `dotenv_if_exists` exports variables for you):
+
+```bash
+dotenv_if_exists "${HOME}/.config/gh/evernote-obsidian.env"
+```
+
+After **`direnv allow`** in this directory, `gh` and Git over `https://github.com/…` pick up **`GH_TOKEN`** for this shell. Prefer **HTTPS** remotes for this flow; **SSH** uses your keys separately and is not limited by the PAT’s repository list.
 
 ## Next steps (for later implementation)
 
