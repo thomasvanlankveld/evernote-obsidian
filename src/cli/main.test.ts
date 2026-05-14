@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import { describe, it } from 'node:test';
@@ -108,5 +110,37 @@ describe('cli main', () => {
     const code = await main(['index', '--vault', fileVault], streams);
     assert.equal(code, 2);
     assert.match(err(), /^index: /);
+  });
+
+  it('snapshot exits 2 when EVERNOTE_DEVELOPER_TOKEN is missing', async () => {
+    const prev = process.env.EVERNOTE_DEVELOPER_TOKEN;
+    delete process.env.EVERNOTE_DEVELOPER_TOKEN;
+    const emptyCwd = await mkdtemp(join(tmpdir(), 'evernote-obs-snapshot-test-'));
+    try {
+      const { streams, err } = makeStreams();
+      const code = await main(['snapshot'], streams, { cwd: emptyCwd });
+      assert.equal(code, 2);
+      assert.match(err(), /EVERNOTE_DEVELOPER_TOKEN/);
+    } finally {
+      await rm(emptyCwd, { recursive: true, force: true });
+      if (prev !== undefined) {
+        process.env.EVERNOTE_DEVELOPER_TOKEN = prev;
+      }
+    }
+  });
+
+  it('snapshot exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['snapshot', '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown snapshot flag/);
+  });
+
+  it('snapshot exits 2 when --max-notes is not a positive integer', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['snapshot', '--max-notes', '0'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--max-notes/);
+    assert.match(err(), /positive integer/);
   });
 });
