@@ -16,6 +16,16 @@ export {
   writeSnapshotFile,
 } from './evernote/snapshotFile.ts';
 export type {
+  BrokenLink,
+  ScanEvernoteLinksOptions,
+} from './vault/extractEvernoteLinks.ts';
+export {
+  classifyEvernoteUrl,
+  extractEvernoteLinksFromMarkdown,
+  scanVaultForEvernoteLinks,
+  tryParseNoteGuidFromUrl,
+} from './vault/extractEvernoteLinks.ts';
+export type {
   VaultIndexCollision,
   VaultIndexEntry,
   VaultIndexResult,
@@ -25,4 +35,5 @@ export {
   normalizeTitle,
   parseFrontmatterTitle,
   VaultIndexRootError,
+  walkVaultMarkdownFiles,
 } from './vault/vaultIndex.ts';

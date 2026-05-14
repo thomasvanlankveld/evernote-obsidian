@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-14 (Phase 3: evernote-backup SQLite snapshot; API path removed)
+**Last updated:** 2026-05-14 (Phase 4: link extraction; `links` CLI)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -79,11 +79,11 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 
 ### Phase 4 — Link extraction
 
-- Per `.md`, find **note** URLs: **`evernote://…`** and **`https://www.evernote.com/shard/…`**; normalize each to **GUID** for the link map. Other **`*.evernote.com`** hosts (e.g. blog): **do not rewrite** — report or skip per CLI.
-- Capture **display text / alias** when the import left one (e.g. existing `[[alias]]`-style segments or markdown link text) so rewrites can use **`[[path|alias]]`** without changing what readers see.
-- Emit **report only**: file, location, raw URL, parsed id, alias when possible.
+- [x] Per `.md`, find **note** URLs: **`evernote://…`** and **`https://www.evernote.com/shard/…`**; normalize each to **GUID** for the link map. Other **`*.evernote.com`** hosts (e.g. blog): **do not rewrite** — report or skip per CLI.
+- [x] Capture **display text / alias** when the import left one (e.g. existing `[[alias]]`-style segments or markdown link text) so rewrites can use **`[[path|alias]]`** without changing what readers see.
+- [x] Emit **report only**: file, location, raw URL, parsed id, alias when possible.
 
-**Deliverable:** `BrokenLink[]` JSON or stdout; no writes.
+**Deliverable:** `BrokenLink[]` JSON or stdout; no writes. ✅
 
 ### Phase 5 — Correlation
 

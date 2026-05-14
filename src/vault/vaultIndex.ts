@@ -63,6 +63,14 @@ function toVaultRelative(vaultRoot: string, absoluteFile: string): string {
   return rel.split('\\').join('/');
 }
 
+/**
+ * Absolute paths to every `.md` file under `vaultRoot`, using the same traversal rules as
+ * {@link buildVaultIndex} (skip `.git` / `node_modules`, no symlinked directories).
+ */
+export async function walkVaultMarkdownFiles(vaultRoot: string): Promise<string[]> {
+  return collectMarkdownFiles(vaultRoot, vaultRoot);
+}
+
 async function collectMarkdownFiles(dir: string, vaultRoot: string): Promise<string[]> {
   const out: string[] = [];
   try {
