@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-10 (Phase 3 split: 3a shipped, 3b OAuth planned)
+**Last updated:** 2026-05-14 (Phase 3: evernote-backup SQLite snapshot; API path removed)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -17,7 +17,7 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 - Build a **repeatable CLI-oriented pipeline** (Node ≥24, per repo).
 - Support **dry-run** and **safe defaults** (no silent data loss).
-- Keep **secrets and personal notes out of git** (tokens, `.env`, vault under `data/` or configurable path).
+- Keep **secrets and personal notes out of git** (backup databases, `.env`, vault under `data/` or configurable path).
 
 ## 3. Non-goals (initially)
 
@@ -31,7 +31,7 @@ This project adds automation: **correlate Evernote note identity → vault file*
 [Vault .md files] ──► scan ──► broken evernote links
                                     │
 [Evernote metadata] ──► index ──────┼──► correlate ──► link map
-(gitignored API snapshot)           │                      │
+(gitignored JSON snapshot)          │                      │
                                     └──────────────────────┼──► rewrite (dry-run / out-dir / in-place+backup)
 ```
 
@@ -41,7 +41,7 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 - [x] **TypeScript**, compile to **`dist/`**, **Node ESM**; `src/`, CLI entry (`package.json` `bin` or `node dist/cli.js`); optional `tsx` for local dev.
 - [x] Scripts: `build`, `lint`, `test`, `dev`.
-- [x] `.env.example` for credentials; align `.gitignore` with build dirs (`/dist/`, `/out/`, reports if written under repo).
+- [x] `.env.example` for optional local defaults; align `.gitignore` with build dirs (`/dist/`, `/out/`, reports if written under repo).
 
 ### Phase 2 — Vault index (read-only)
 
@@ -60,44 +60,22 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 **Deliverable:** `buildVaultIndex(root)` + fixture tests. ✅
 
-### Phase 3 — Evernote metadata (API)
+### Phase 3 — Evernote metadata (evernote-backup SQLite)
 
-Produce a **gitignored JSON snapshot** of note metadata (GUID, title, updated) from Evernote’s API so later phases can correlate vault files to Evernote identities. **Phase 4+ numbering stays unchanged** (link extraction remains Phase 4).
+Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, plus a placeholder **`updated`**) from a local **[evernote-backup](https://github.com/vzhd1701/evernote-backup)** SQLite database so later phases can correlate vault files to Evernote identities. **Phase 4+ numbering stays unchanged** (link extraction remains Phase 4).
 
-Split so **3a** can merge as a complete vertical slice (developer token), while **3b** adds Evernote’s **preferred production auth** without renumbering the pipeline.
+- [x] **`snapshot --db <path>`** reads **`notes.guid`** and **`notes.title`** (read-only `node:sqlite`); writes the same envelope shape as before. **`host`** in the JSON is the literal **`evernote-backup`** (metadata origin label, not an API hostname).
+- [x] **Trash** (`is_active = 0`) excluded; **`is_active` NULL** (in-progress sync rows) treated as active.
+- [x] **`updated`:** Evernote’s real update time is only inside Python-pickled `raw_note` in upstream’s schema; this CLI does not unpickle. Every **`NoteRecord.updated`** is the sentinel **`1970-01-01T00:00:00.000Z`** (documented in README and types). Title-only correlation (Phase 5) is unaffected.
+- [x] Optional **`--max-notes`** caps output volume; stdout summary includes **`sourceRowCount`** and **`truncated`** when the cap cuts rows.
 
-#### Phase 3a — Developer token auth + snapshot pipeline
+**Deliverable:** `NoteRecord[]` + fixture tests + `snapshot` CLI. ✅
 
-- [x] Authenticate with **`EVERNOTE_DEVELOPER_TOKEN`**, list/fetch notes (GUID, title, updated), persist **gitignored JSON snapshot** for idempotent reruns and rate limits.
+**Phase 3 implementation notes**
 
-**Deliverable:** `NoteRecord[]` + redacted fixture tests + `snapshot` CLI for accounts where Evernote still issues a developer token (e.g. sandbox or legacy access). ✅
-
-**Phase 3a implementation notes**
-
-- **Auth:** `EVERNOTE_DEVELOPER_TOKEN` (required for `snapshot` when OAuth is not used); optional `EVERNOTE_HOST` (`www.evernote.com`, `sandbox.evernote.com`, or `app.yinxiang.com` / Yinxiang).
-- **Transport:** Official npm package `evernote` (Thrift NoteStore); paginated `findNotesMetadata` (default page size 250, optional `--sleep-ms` between pages).
-- **CLI:** `evernote-obsidian snapshot [--out <path>]` — default snapshot path **`./out/evernote-notes.json`** (repo already gitignores `/out/`). Loads **`.env` from cwd** when present without overriding already-set environment variables.
-- **On-disk shape:** `{ version: 1, writtenAt, host, notes: NoteRecord[] }` where each `NoteRecord` is `{ guid, title, updated }` and `updated` is ISO 8601 UTC from Evernote’s `updated` ms value. **Snapshot fields may grow** later (e.g. `notebookGuid`) if correlation needs more disambiguation than title + overrides.
-- **Safety:** Missing or non-finite `updated` for a note with a GUID **fails the fetch** (no silent `1970-01-01` rows). CLI accepts **`--max-notes`** to cap volume; stdout includes **`totalNotesFromApi`** when the API returns it.
-
-#### Phase 3b — OAuth (production path when developer tokens are unavailable)
-
-Evernote’s UI and docs steer API access toward **OAuth**; self-serve developer tokens are **restricted to specific cases**, which blocks **3a** alone for many production accounts. **3b** adds OAuth without changing the meaning of later phases.
-
-- [ ] Evernote **API key / consumer** configuration (client id and secret), documented in **`.env.example`** and README; secrets remain **gitignored** or env-only.
-- [ ] **Authorization flow** appropriate for a **personal CLI** (e.g. one-time browser login, local redirect or out-of-band code exchange — exact UX TBD in implementation).
-- [ ] Persist **refresh token** (and access token if needed) in a **gitignored** path with clear security guidance; refresh before `findNotesMetadata` runs.
-- [ ] Pass the resulting **user access credential** into the **same** Thrift NoteStore / `findNotesMetadata` path as **3a** (confirm Evernote Node `Client` constructor expectations for OAuth-issued tokens vs developer token).
-- [ ] **`snapshot`** (or a thin `login` / `auth` companion command) supports **OAuth path**; **developer token remains supported** where it still works (e.g. sandbox).
-- [ ] Tests: mock or contract-level coverage for token refresh and CLI wiring; no real credentials in repo.
-
-**Deliverable:** `snapshot` (or documented two-step auth + snapshot) works **end-to-end for typical production Evernote users** who cannot create a developer token.
-
-**Phase 3b implementation notes**
-
-- **Non-goal:** multi-tenant SaaS onboarding; a single-user migration tool is enough.
-- **Non-goal:** changing the **3a snapshot JSON shape** or pagination semantics unless OAuth or API policy forces it.
-- **Policy:** If Evernote changes OAuth or deprecates the classic API, this phase may need revision — same risk as **3a** with the maintenance-frozen `evernote` SDK (see README).
+- **CLI:** `evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]` — default **`./out/evernote-notes.json`**. No Evernote API credentials in this repo.
+- **On-disk shape:** `{ version: 1, writtenAt, host, notes: NoteRecord[] }` unchanged. **`host`** is **`evernote-backup`** for this source.
+- **Upstream schema:** expects `notes` table per evernote-backup’s `DB_SCHEMA` (`guid`, `title`, `is_active`, …). If the file is not that format, fail fast.
 
 ### Phase 4 — Link extraction
 
@@ -123,7 +101,7 @@ Evernote’s UI and docs steer API access toward **OAuth**; self-serve developer
 
 - Golden-file tests on miniature vaults.
 - Encoding / Unicode / punctuation in titles; percent-encoding in URLs.
-- README: env vars, command order, security reminders.
+- README: commands, security reminders.
 
 ## 6. Risks
 
@@ -131,13 +109,14 @@ Evernote’s UI and docs steer API access toward **OAuth**; self-serve developer
 | ------------------------------------------ | -------------------------------------------------------------------- |
 | Title mismatch after Importer sanitization | Normalization rules + override file; verbose unmatched report        |
 | Duplicate titles                           | Fail with report; overrides required until unambiguous               |
-| API limits / outages                       | Snapshot cache; retry/backoff; document when to refresh the snapshot |
-| Developer token unavailable (Evernote policy) | **Phase 3b OAuth**; optional future non-API metadata sources if API access is impossible |
+| Stale backup vs Obsidian import                    | Re-run `evernote-backup sync` before `snapshot`; document refresh cadence |
+| evernote-backup DB format drift                    | Fail fast on missing `notes` table; pin upstream schema in tests / README     |
 | Wrong rewrites                             | Dry-run default; golden tests; backup before in-place                |
 
 ## 7. References
 
 - [Import from Evernote – Obsidian Help](https://obsidian.md/help/import/evernote)
+- [evernote-backup (SQLite backup tool)](https://github.com/vzhd1701/evernote-backup)
 - [obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306)
 - Repo README: `/README.md`
 - EDDs for this repo: `/docs/edds/` (filenames: `YYYY-MM-DD-<slug>.edd.md`)

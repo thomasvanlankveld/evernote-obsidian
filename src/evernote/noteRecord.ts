@@ -5,7 +5,11 @@
 export interface NoteRecord {
   guid: string;
   title: string;
-  /** ISO 8601 UTC, from Evernote note `updated` (ms) */
+  /**
+   * ISO 8601 UTC from Evernote when available.
+   * Snapshots built from evernote-backup SQLite use the sentinel `1970-01-01T00:00:00.000Z` because `updated`
+   * is only stored inside Python-pickled `raw_note` blobs in that database.
+   */
   updated: string;
 }
 
@@ -14,7 +18,7 @@ export interface EvernoteNoteSnapshot {
   version: 1;
   /** When this file was written (ISO 8601 UTC). */
   writtenAt: string;
-  /** Service host used for the API (e.g. www.evernote.com). */
+  /** Metadata origin: e.g. `evernote-backup` for SQLite snapshots, or a former API host string. */
   host: string;
   notes: NoteRecord[];
 }

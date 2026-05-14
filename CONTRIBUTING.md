@@ -16,4 +16,4 @@ Notes for anyone working **in this repository**: local checks and **optional** G
 
 ## Secrets
 
-Never commit Evernote developer tokens, GitHub tokens, or `.enex` exports. The CLI reads **`.env`** for Evernote variables (see **`.env.example`** and the README).
+Never commit Evernote backup databases, GitHub tokens, or `.enex` exports that contain private data. A local **`.env`** is optional (see **`.env.example`**).
