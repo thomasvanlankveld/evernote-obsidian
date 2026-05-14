@@ -1,10 +1,11 @@
 /**
  * CLI entrypoint for the Evernote → Obsidian link-repair pipeline.
  */
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { readNoteRecordsFromEvernoteBackupDb } from '../evernote/readEvernoteBackupDb.ts';
 import { buildSnapshotEnvelope, writeSnapshotFile } from '../evernote/snapshotFile.ts';
+import { scanVaultForEvernoteLinks } from '../vault/extractEvernoteLinks.ts';
 import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
 import { readCliPackageVersion } from './packageVersion.ts';
 
@@ -54,6 +55,15 @@ export async function main(
       return 2;
     }
     return runSnapshot(parsed.snapshot, streams);
+  }
+
+  if (cmd === 'links') {
+    const parsed = parseLinksArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runLinks(parsed.links, streams);
   }
 
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);
@@ -167,6 +177,90 @@ function parseSnapshotArgs(
   return { ok: true, snapshot: { dbPath, outPath, maxRecords } };
 }
 
+interface LinksCliOk {
+  vaultRoot: string;
+  skipOtherEvernoteHosts: boolean;
+  outPath?: string | undefined;
+}
+
+function parseLinksArgs(
+  args: readonly string[],
+  cwd: string,
+): { ok: true; links: LinksCliOk } | { ok: false; message: string } {
+  const defaultVault = resolve(cwd, 'data');
+  let vaultRoot = defaultVault;
+  let skipOtherEvernoteHosts = false;
+  let outPath: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--vault') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return { ok: false, message: 'error: --vault requires a path (e.g. --vault ./data)' };
+      }
+      vaultRoot = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--vault=')) {
+      const tail = a.slice('--vault='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --vault= requires a non-empty path' };
+      }
+      vaultRoot = resolve(cwd, tail);
+    } else if (a === '--skip-other-evernote-hosts') {
+      skipOtherEvernoteHosts = true;
+    } else if (a === '--out') {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('-')) {
+        return {
+          ok: false,
+          message: 'error: --out requires a path (e.g. --out ./out/broken-links.json)',
+        };
+      }
+      outPath = resolve(cwd, v);
+      i++;
+    } else if (a?.startsWith('--out=')) {
+      const tail = a.slice('--out='.length);
+      if (tail === '') {
+        return { ok: false, message: 'error: --out= requires a non-empty path' };
+      }
+      outPath = resolve(cwd, tail);
+    } else {
+      return { ok: false, message: `error: unknown links flag: ${a}` };
+    }
+  }
+
+  return { ok: true, links: { vaultRoot, skipOtherEvernoteHosts, outPath } };
+}
+
+async function runLinks(parsed: LinksCliOk, streams: MainStreams): Promise<number> {
+  try {
+    const links = await scanVaultForEvernoteLinks(parsed.vaultRoot, {
+      skipOtherEvernoteHosts: parsed.skipOtherEvernoteHosts,
+    });
+    const payload = { ok: true as const, vault: parsed.vaultRoot, links };
+    const text = `${JSON.stringify(payload, null, 2)}\n`;
+    if (parsed.outPath !== undefined) {
+      await mkdir(dirname(parsed.outPath), { recursive: true });
+      await writeFile(parsed.outPath, text, 'utf8');
+      streams.stdout.write(
+        `${JSON.stringify({ ok: true, path: parsed.outPath, count: links.length }, null, 2)}\n`,
+      );
+    } else {
+      streams.stdout.write(text);
+    }
+    return 0;
+  } catch (e) {
+    if (e instanceof VaultIndexRootError) {
+      streams.stderr.write(`${e.message}\n`);
+      return 2;
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    streams.stderr.write(`links: ${msg}\n`);
+    return 2;
+  }
+}
+
 async function runSnapshot(parsed: SnapshotCliOk, streams: MainStreams): Promise<number> {
   try {
     const readOpts =
@@ -236,16 +330,19 @@ function usage(): string {
     '  evernote-obsidian [--help|--version]',
     '  evernote-obsidian index [--vault <path>]',
     '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',
+    '  evernote-obsidian links [--vault <path>] [--out <path>] [--skip-other-evernote-hosts]',
     '',
     'Commands:',
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
+    '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
     '',
     'Options:',
-    '  --vault       Vault root directory (default: ./data relative to cwd)',
-    '  --db          Path to evernote-backup SQLite database (required for snapshot)',
-    '  --out         Snapshot JSON path (default: ./out/evernote-notes.json)',
-    '  --max-notes   Stop after N notes (optional cap; notes ordered by title)',
+    '  --vault                        Vault root directory (default: ./data relative to cwd)',
+    '  --skip-other-evernote-hosts    Omit non-shard *.evernote.com URLs from the links report',
+    '  --db                           Path to evernote-backup SQLite database (required for snapshot)',
+    '  --out                          Output path (snapshot default: ./out/evernote-notes.json; links: stdout unless set)',
+    '  --max-notes                    Stop after N notes (optional cap; notes ordered by title)',
     '',
     '  evernote-backup: https://github.com/vzhd1701/evernote-backup',
     '',

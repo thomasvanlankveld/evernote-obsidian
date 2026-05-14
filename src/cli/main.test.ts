@@ -11,6 +11,7 @@ import { type MainStreams, main } from './main.ts';
 const cliDir = dirname(fileURLToPath(import.meta.url));
 const uniqueFixtureVault = join(cliDir, '../vault/__fixtures__/unique');
 const collisionFixtureVault = join(cliDir, '../vault/__fixtures__/collision');
+const linksFixtureDir = join(cliDir, '../vault/__fixtures__/links');
 
 function makeStreams(): { streams: MainStreams; out: () => string; err: () => string } {
   const outChunks: Buffer[] = [];
@@ -175,5 +176,22 @@ describe('cli main', () => {
     assert.equal(code, 2);
     assert.match(err(), /--max-notes/);
     assert.match(err(), /positive integer/);
+  });
+
+  it('links exits 0 and prints JSON with extracted rows', async () => {
+    const { streams, out, err } = makeStreams();
+    const code = await main(['links', '--vault', linksFixtureDir], streams);
+    assert.equal(code, 0);
+    assert.equal(err(), '');
+    const j = JSON.parse(out()) as { ok: boolean; links: { parsedGuid: string | null }[] };
+    assert.equal(j.ok, true);
+    assert.ok(j.links.length >= 3);
+  });
+
+  it('links exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['links', '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown links flag/);
   });
 });
