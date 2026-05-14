@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-10 (Phase 3 split: 3a shipped, 3b OAuth planned)
+**Last updated:** 2026-05-14 (Phase 3b OAuth shipped on branch)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -84,20 +84,21 @@ Split so **3a** can merge as a complete vertical slice (developer token), while 
 
 Evernote’s UI and docs steer API access toward **OAuth**; self-serve developer tokens are **restricted to specific cases**, which blocks **3a** alone for many production accounts. **3b** adds OAuth without changing the meaning of later phases.
 
-- [ ] Evernote **API key / consumer** configuration (client id and secret), documented in **`.env.example`** and README; secrets remain **gitignored** or env-only.
-- [ ] **Authorization flow** appropriate for a **personal CLI** (e.g. one-time browser login, local redirect or out-of-band code exchange — exact UX TBD in implementation).
-- [ ] Persist **refresh token** (and access token if needed) in a **gitignored** path with clear security guidance; refresh before `findNotesMetadata` runs.
-- [ ] Pass the resulting **user access credential** into the **same** Thrift NoteStore / `findNotesMetadata` path as **3a** (confirm Evernote Node `Client` constructor expectations for OAuth-issued tokens vs developer token).
-- [ ] **`snapshot`** (or a thin `login` / `auth` companion command) supports **OAuth path**; **developer token remains supported** where it still works (e.g. sandbox).
-- [ ] Tests: mock or contract-level coverage for token refresh and CLI wiring; no real credentials in repo.
+- [x] Evernote **API key / consumer** configuration (client id and secret), documented in **`.env.example`** and README; secrets remain **gitignored** or env-only.
+- [x] **Authorization flow** appropriate for a **personal CLI** (one-time browser login, local `http://127.0.0.1:8765/callback` redirect by default; override with **`EVERNOTE_OAUTH_CALLBACK_URL`** when the registered callback differs).
+- [x] Persist **OAuth 1 access token** (Evernote’s classic API does **not** expose OAuth-2-style refresh tokens) plus optional **`edam_noteStoreUrl`** / **`edam_expires`** in a **gitignored** path (`./out/evernote-oauth.json` by default); **`login`** again before expiry.
+- [x] Pass the resulting **user access credential** into the **same** Thrift NoteStore / `findNotesMetadata` path as **3a** (`Client({ token })`, optional `getNoteStore(edam_noteStoreUrl)`).
+- [x] **`snapshot`** supports **OAuth path** via saved token file; **`login`** performs browser OAuth; **developer token remains supported** where it still works (e.g. sandbox).
+- [x] Tests: unit coverage for credential resolution, OAuth token expiry checks, callback URL validation, and CLI wiring; no real credentials in repo.
 
-**Deliverable:** `snapshot` (or documented two-step auth + snapshot) works **end-to-end for typical production Evernote users** who cannot create a developer token.
+**Deliverable:** `snapshot` (or documented two-step auth + snapshot) works **end-to-end for typical production Evernote users** who cannot create a developer token. ✅
 
 **Phase 3b implementation notes**
 
 - **Non-goal:** multi-tenant SaaS onboarding; a single-user migration tool is enough.
 - **Non-goal:** changing the **3a snapshot JSON shape** or pagination semantics unless OAuth or API policy forces it.
 - **Policy:** If Evernote changes OAuth or deprecates the classic API, this phase may need revision — same risk as **3a** with the maintenance-frozen `evernote` SDK (see README).
+- **OAuth 1 detail:** Evernote returns a **long-lived access token** and **`edam_expires`** (not an OAuth 2 refresh token). The CLI persists access material to disk and instructs users to re-run **`login`** when expired.
 
 ### Phase 4 — Link extraction
 

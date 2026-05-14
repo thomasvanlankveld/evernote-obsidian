@@ -112,7 +112,7 @@ describe('cli main', () => {
     assert.match(err(), /^index: /);
   });
 
-  it('snapshot exits 2 when EVERNOTE_DEVELOPER_TOKEN is missing', async () => {
+  it('snapshot exits 2 when no Evernote credentials are configured', async () => {
     const prev = process.env.EVERNOTE_DEVELOPER_TOKEN;
     delete process.env.EVERNOTE_DEVELOPER_TOKEN;
     const emptyCwd = await mkdtemp(join(tmpdir(), 'evernote-obs-snapshot-test-'));
@@ -120,13 +120,42 @@ describe('cli main', () => {
       const { streams, err } = makeStreams();
       const code = await main(['snapshot'], streams, { cwd: emptyCwd });
       assert.equal(code, 2);
-      assert.match(err(), /EVERNOTE_DEVELOPER_TOKEN/);
+      assert.match(err(), /snapshot: missing credentials/);
     } finally {
       await rm(emptyCwd, { recursive: true, force: true });
       if (prev !== undefined) {
         process.env.EVERNOTE_DEVELOPER_TOKEN = prev;
       }
     }
+  });
+
+  it('login exits 2 when consumer key or secret is missing', async () => {
+    const prevK = process.env.EVERNOTE_CONSUMER_KEY;
+    const prevS = process.env.EVERNOTE_CONSUMER_SECRET;
+    delete process.env.EVERNOTE_CONSUMER_KEY;
+    delete process.env.EVERNOTE_CONSUMER_SECRET;
+    const emptyCwd = await mkdtemp(join(tmpdir(), 'evernote-obs-login-test-'));
+    try {
+      const { streams, err } = makeStreams();
+      const code = await main(['login', '--no-open'], streams, { cwd: emptyCwd });
+      assert.equal(code, 2);
+      assert.match(err(), /EVERNOTE_CONSUMER_KEY/);
+    } finally {
+      await rm(emptyCwd, { recursive: true, force: true });
+      if (prevK !== undefined) {
+        process.env.EVERNOTE_CONSUMER_KEY = prevK;
+      }
+      if (prevS !== undefined) {
+        process.env.EVERNOTE_CONSUMER_SECRET = prevS;
+      }
+    }
+  });
+
+  it('login exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['login', '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown login flag/);
   });
 
   it('snapshot exits 2 on unknown flag', async () => {

@@ -18,9 +18,10 @@ A complementary approach is to use **Evernote’s API** (or other metadata sourc
 After `npm install` and `npm run build`, the **`evernote-obsidian`** CLI is available (the npm package name matches the tool; see `package.json` `bin`).
 
 - **`evernote-obsidian index [--vault <path>]`** — Walk the vault (default `./data`) and report whether normalized titles are unique enough for correlation.
-- **`evernote-obsidian snapshot [--out <path>] [--page-size <n>] [--sleep-ms <n>] [--max-notes <n>]`** — Call Evernote’s API and write a JSON snapshot of note metadata (GUID, title, last updated). Default output: `./out/evernote-notes.json` (the `out/` directory is gitignored). Use **`--max-notes`** to cap how many newest notes you pull (handy when iterating against production).
+- **`evernote-obsidian login [--token-path <path>] [--timeout-ms <n>] [--no-open]`** — Run Evernote **OAuth 1** in the browser and save an access token JSON file (default **`./out/evernote-oauth.json`**, gitignored with the rest of `out/`). Register **`http://127.0.0.1:8765/callback`** (or your override in **`EVERNOTE_OAUTH_CALLBACK_URL`**) on your Evernote API key so the redirect matches the local listener.
+- **`evernote-obsidian snapshot [--out <path>] [--oauth-token-path <path>] [--page-size <n>] [--sleep-ms <n>] [--max-notes <n>]`** — Call Evernote’s API and write a JSON snapshot of note metadata (GUID, title, last updated). Default output: `./out/evernote-notes.json` (the `out/` directory is gitignored). Use **`--max-notes`** to cap how many newest notes you pull (handy when iterating against production).
 
-Copy `.env.example` to `.env` and set **`EVERNOTE_DEVELOPER_TOKEN`** before `snapshot`. Optional **`EVERNOTE_HOST`** selects production (`www.evernote.com`), sandbox, or Yinxiang (`app.yinxiang.com`).
+Copy `.env.example` to `.env`. For **`snapshot`**, set **`EVERNOTE_DEVELOPER_TOKEN`** *or* run **`login`** first so an OAuth token file exists. Optional **`EVERNOTE_HOST`** selects production (`www.evernote.com`), sandbox, or Yinxiang (`app.yinxiang.com`). Evernote’s classic API uses **OAuth 1** long-lived access tokens (with `edam_expires`); there is **no refresh token** — run **`login`** again before expiry if `snapshot` reports the token expired.
 
 **`.env` loading** (for `snapshot`) is a small v1 parser: `KEY=value` lines, optional `#` comments, optional single-line quotes. It is **not** full dotenv (e.g. unquoted `#` inside values, `export KEY=`, and multiline values are not supported).
 
@@ -30,11 +31,11 @@ For **very large accounts**, prefer running `snapshot` during a **quiet period**
 
 These boundaries are intentional for an early, personal migration tool; they are not a full Evernote client.
 
-- **Authentication:** Only **`EVERNOTE_DEVELOPER_TOKEN`** is supported today. **OAuth** and other flows are not implemented in this repo yet.
+- **Authentication:** **`EVERNOTE_DEVELOPER_TOKEN`** when available, or **OAuth 1** via **`evernote-obsidian login`** (consumer key + secret) and a gitignored token file under **`out/`** by default.
 - **Account scope:** Metadata is read from the **primary personal NoteStore** returned for that token. **Evernote Business** and other secondary stores are not separately enumerated in this phase.
 - **What is fetched:** **Metadata only** (GUID, title, `updated` timestamp)—not full note bodies or resources. Pagination uses Evernote’s `findNotesMetadata`; use **`--sleep-ms`** if you hit rate limits.
 - **SDK:** The npm package **`evernote`** is Evernote’s official JavaScript SDK around the Thrift API; it is **maintenance-frozen** upstream. If Evernote changes or restricts the classic API, this path may need revisiting.
-- **Evernote policy:** Access via developer tokens is subject to Evernote’s own product and developer policies; if tokens are unavailable for your account, you will need another metadata source (not covered here yet).
+- **Evernote policy:** Access via developer tokens is subject to Evernote’s own product and developer policies; if a developer token is unavailable, use **OAuth** (`login` + `snapshot`) instead.
 
 ## Restoring `data/` on a new machine
 
@@ -42,8 +43,8 @@ These boundaries are intentional for an early, personal migration tool; they are
 
 ## Security
 
-- Never commit Evernote developer tokens or `.enex` files that contain private notes unless this repo is strictly private and you accept the risk.
-- Prefer environment variables or a local `.env` (gitignored) for credentials; see **`.env.example`** for variable names used by the CLI.
+- Never commit Evernote developer tokens, OAuth access token files, consumer secrets, or `.enex` files that contain private notes unless this repo is strictly private and you accept the risk.
+- Prefer environment variables or a local `.env` (gitignored) for credentials; see **`.env.example`** for variable names used by the CLI. Treat **`./out/evernote-oauth.json`** like a password (mode `0600` on write; keep **`out/`** gitignored).
 
 ## Contributing
 

@@ -7,6 +7,11 @@ import type { NoteRecord } from './noteRecord.ts';
 
 export interface FetchNoteRecordsOptions {
   token: string;
+  /**
+   * When set (e.g. from OAuth access-token `edam_noteStoreUrl`), passed to `getNoteStore(url)`.
+   * Developer-token sessions usually omit this and resolve the URL via UserStore.
+   */
+  noteStoreUrl?: string | undefined;
   /** Raw EVERNOTE_HOST value (optional; defaults production www). */
   hostEnv?: string | undefined;
   /** Notes per findNotesMetadata page (Evernote caps this; default 250). */
@@ -43,7 +48,7 @@ interface EvernoteSdkRoot {
     china?: boolean;
     serviceHost?: string;
   }) => {
-    getNoteStore: () => {
+    getNoteStore: (noteStoreUrl?: string) => {
       findNotesMetadata: (
         filter: unknown,
         offset: number,
@@ -94,6 +99,11 @@ export async function fetchAllNoteRecords(
     serviceHost: clientOpts.serviceHost,
   });
 
+  const noteStore =
+    opts.noteStoreUrl !== undefined && opts.noteStoreUrl !== ''
+      ? client.getNoteStore(opts.noteStoreUrl)
+      : client.getNoteStore();
+
   const pageSize = Math.min(250, Math.max(1, opts.pageSize ?? 250));
   const sleepMs = Math.max(0, opts.sleepBetweenPagesMs ?? 0);
   const maxCap =
@@ -119,7 +129,6 @@ export async function fetchAllNoteRecords(
     includeLargestResourceSize: false,
   });
 
-  const noteStore = client.getNoteStore();
   let records: NoteRecord[] = [];
   let offset = 0;
   let totalNotesFromApi: number | undefined;
