@@ -9,7 +9,7 @@ export interface FetchNoteRecordsOptions {
   token: string;
   /**
    * When set (e.g. from OAuth access-token `edam_noteStoreUrl`), passed to `getNoteStore(url)`.
-   * Developer-token sessions usually omit this and resolve the URL via UserStore.
+   * When omitted, the SDK resolves NoteStore via UserStore.
    */
   noteStoreUrl?: string | undefined;
   /** Raw EVERNOTE_HOST value (optional; defaults production www). */

@@ -6,45 +6,7 @@ import { describe, it } from 'node:test';
 import { resolveSnapshotCredential } from './resolveSnapshotCredential.ts';
 
 describe('resolveSnapshotCredential', () => {
-  it('prefers EVERNOTE_DEVELOPER_TOKEN over an oauth file', async () => {
-    const prevDev = process.env.EVERNOTE_DEVELOPER_TOKEN;
-    const dir = await mkdtemp(join(tmpdir(), 'eo-snap-dev-'));
-    const path = join(dir, 'oauth.json');
-    try {
-      process.env.EVERNOTE_DEVELOPER_TOKEN = 'from-env';
-      await writeFile(
-        path,
-        JSON.stringify({
-          version: 1,
-          serviceHost: 'www.evernote.com',
-          accessToken: 'from-file',
-          savedAt: new Date().toISOString(),
-          expiresAtMs: Date.now() + 86_400_000,
-        }),
-      );
-      const r = await resolveSnapshotCredential({
-        cwd: dir,
-        hostEnv: 'www.evernote.com',
-        oauthTokenPath: path,
-      });
-      assert.equal(r.ok, true);
-      if (r.ok) {
-        assert.equal(r.credential.token, 'from-env');
-        assert.equal(r.credential.source, 'developer');
-      }
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-      if (prevDev === undefined) {
-        delete process.env.EVERNOTE_DEVELOPER_TOKEN;
-      } else {
-        process.env.EVERNOTE_DEVELOPER_TOKEN = prevDev;
-      }
-    }
-  });
-
-  it('loads oauth file when developer token is absent', async () => {
-    const prevDev = process.env.EVERNOTE_DEVELOPER_TOKEN;
-    delete process.env.EVERNOTE_DEVELOPER_TOKEN;
+  it('loads oauth token file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'eo-snap-oauth-'));
     const path = join(dir, 'oauth.json');
     try {
@@ -65,22 +27,14 @@ describe('resolveSnapshotCredential', () => {
       });
       assert.equal(r.ok, true);
       if (r.ok) {
-        assert.equal(r.credential.source, 'oauth');
         assert.equal(r.credential.token, 'S=file');
       }
     } finally {
       await rm(dir, { recursive: true, force: true });
-      if (prevDev === undefined) {
-        delete process.env.EVERNOTE_DEVELOPER_TOKEN;
-      } else {
-        process.env.EVERNOTE_DEVELOPER_TOKEN = prevDev;
-      }
     }
   });
 
   it('errors when oauth token is expired', async () => {
-    const prevDev = process.env.EVERNOTE_DEVELOPER_TOKEN;
-    delete process.env.EVERNOTE_DEVELOPER_TOKEN;
     const dir = await mkdtemp(join(tmpdir(), 'eo-snap-exp-'));
     const path = join(dir, 'oauth.json');
     try {
@@ -105,17 +59,10 @@ describe('resolveSnapshotCredential', () => {
       }
     } finally {
       await rm(dir, { recursive: true, force: true });
-      if (prevDev === undefined) {
-        delete process.env.EVERNOTE_DEVELOPER_TOKEN;
-      } else {
-        process.env.EVERNOTE_DEVELOPER_TOKEN = prevDev;
-      }
     }
   });
 
   it('errors on serviceHost mismatch', async () => {
-    const prevDev = process.env.EVERNOTE_DEVELOPER_TOKEN;
-    delete process.env.EVERNOTE_DEVELOPER_TOKEN;
     const dir = await mkdtemp(join(tmpdir(), 'eo-snap-host-'));
     const path = join(dir, 'oauth.json');
     try {
@@ -140,11 +87,6 @@ describe('resolveSnapshotCredential', () => {
       }
     } finally {
       await rm(dir, { recursive: true, force: true });
-      if (prevDev === undefined) {
-        delete process.env.EVERNOTE_DEVELOPER_TOKEN;
-      } else {
-        process.env.EVERNOTE_DEVELOPER_TOKEN = prevDev;
-      }
     }
   });
 });

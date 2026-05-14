@@ -330,7 +330,7 @@ async function runSnapshot(
     return 2;
   }
 
-  const { token, noteStoreUrl, source } = resolved.credential;
+  const { token, noteStoreUrl } = resolved.credential;
 
   try {
     const fetchResult = await fetchAllNoteRecords({
@@ -358,7 +358,6 @@ async function runSnapshot(
       path: parsed.outPath,
       count: records.length,
       host: clientOpts.serviceHost,
-      auth: source,
     };
     if (totalNotesFromApi !== undefined) {
       summary.totalNotesFromApi = totalNotesFromApi;
@@ -373,7 +372,7 @@ async function runSnapshot(
     const msg = e instanceof Error ? e.message : String(e);
     streams.stderr.write(`snapshot: ${msg}\n`);
     streams.stderr.write(
-      'snapshot: hint: verify EVERNOTE_DEVELOPER_TOKEN or OAuth token file, EVERNOTE_HOST (production vs sandbox vs Yinxiang), and Evernote rate limits.\n',
+      'snapshot: hint: verify OAuth token file (run `evernote-obsidian login`), EVERNOTE_HOST (production vs sandbox vs Yinxiang), and Evernote rate limits.\n',
     );
     return 2;
   }
@@ -429,7 +428,7 @@ function usage(): string {
     '  --sleep-ms           Pause between pages to ease rate limits (default: 0)',
     '  --max-notes          Stop after N newest notes (optional cap for iteration / large accounts)',
     '',
-    'Env (snapshot auth): prefer EVERNOTE_DEVELOPER_TOKEN when set; else OAuth token file from `login`.',
+    'Env (snapshot): OAuth token file from `login` (see .env.example); EVERNOTE_HOST optional.',
     'Env (login): EVERNOTE_CONSUMER_KEY, EVERNOTE_CONSUMER_SECRET, EVERNOTE_HOST (optional), EVERNOTE_OAUTH_CALLBACK_URL (optional).',
     '',
   ].join('\n');

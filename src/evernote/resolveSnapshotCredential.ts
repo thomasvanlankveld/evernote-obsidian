@@ -6,12 +6,10 @@ import {
 } from './evernoteOAuthTokens.ts';
 
 export interface SnapshotCredentialResolved {
-  /** Authentication token for Evernote Thrift (`Client({ token })`). */
+  /** OAuth 1 access token for Evernote Thrift (`Client({ token })`). */
   token: string;
   /** When set, passed to `getNoteStore(url)` (from OAuth access-token response). */
   noteStoreUrl?: string | undefined;
-  /** How the token was obtained (for logging / hints). */
-  source: 'developer' | 'oauth';
 }
 
 export type ResolveSnapshotCredentialResult =
@@ -25,22 +23,17 @@ export interface ResolveSnapshotCredentialOptions {
 }
 
 /**
- * Prefer developer token when set; otherwise load a saved OAuth access token file.
+ * Load a saved OAuth access token file produced by `evernote-obsidian login`.
  */
 export async function resolveSnapshotCredential(
   opts: ResolveSnapshotCredentialOptions,
 ): Promise<ResolveSnapshotCredentialResult> {
-  const dev = process.env.EVERNOTE_DEVELOPER_TOKEN?.trim();
-  if (dev) {
-    return { ok: true, credential: { token: dev, source: 'developer' } };
-  }
-
   const path = resolveEvernoteOAuthTokenPath(opts.cwd, opts.oauthTokenPath);
   const file = await readEvernoteOAuthTokenFile(path);
   if (!file) {
     return {
       ok: false,
-      message: `missing credentials: set EVERNOTE_DEVELOPER_TOKEN or run \`evernote-obsidian login\` (expected OAuth token file at ${path})`,
+      message: `missing credentials: run \`evernote-obsidian login\` first (expected OAuth token file at ${path})`,
     };
   }
 
@@ -64,7 +57,6 @@ export async function resolveSnapshotCredential(
     credential: {
       token: file.accessToken,
       noteStoreUrl: file.noteStoreUrl,
-      source: 'oauth',
     },
   };
 }

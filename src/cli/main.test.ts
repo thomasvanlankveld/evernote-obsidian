@@ -112,9 +112,7 @@ describe('cli main', () => {
     assert.match(err(), /^index: /);
   });
 
-  it('snapshot exits 2 when no Evernote credentials are configured', async () => {
-    const prev = process.env.EVERNOTE_DEVELOPER_TOKEN;
-    delete process.env.EVERNOTE_DEVELOPER_TOKEN;
+  it('snapshot exits 2 when no OAuth token file exists', async () => {
     const emptyCwd = await mkdtemp(join(tmpdir(), 'evernote-obs-snapshot-test-'));
     try {
       const { streams, err } = makeStreams();
@@ -123,9 +121,6 @@ describe('cli main', () => {
       assert.match(err(), /snapshot: missing credentials/);
     } finally {
       await rm(emptyCwd, { recursive: true, force: true });
-      if (prev !== undefined) {
-        process.env.EVERNOTE_DEVELOPER_TOKEN = prev;
-      }
     }
   });
 
