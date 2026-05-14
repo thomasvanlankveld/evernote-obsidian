@@ -2,6 +2,7 @@ Be concise.
 
 Git policy (agents):
 - `main` is branch-protected: do all work on a feature branch and land changes via PR (no direct pushes to `main`).
+- **Agent worktrees (required):** Do **all** agent-driven **file edits and `git commit`** steps inside a **linked git worktree** on a **feature branch**—not from an unregistered extra clone and not by stacking agent commits on whatever checkout happens to be open. **Before the first edit**, run something like **`git worktree add .worktrees/<slug>/ -b feat/<topic> origin/main`** (or reuse an existing `.worktrees/...` checkout that already points at the right branch). If the agent’s Cursor workspace is still the primary repo root, **move or reopen the workspace** to that worktree path so edits land in the correct checkout.
 - Prefer `git merge` (or PR) over rebase.
 - Never rewrite remote/shared history: no `rebase`, `reset --hard`, `commit --amend`, or `push --force`—unless explicitly requested in this chat.
 - **Git / `gh`:** maintainers often use **`gh auth login`** + **`gh auth setup-git`** (see [CONTRIBUTING.md](CONTRIBUTING.md)); credentials are outside the repo.
