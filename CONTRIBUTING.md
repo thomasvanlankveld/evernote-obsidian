@@ -30,6 +30,17 @@ dotenv_if_exists "${HOME}/.config/gh/evernote-obsidian.env"
 
 After **`direnv allow`** in this directory, `gh` and Git over `https://github.com/…` pick up **`GH_TOKEN`** for this shell. Prefer **HTTPS** remotes for this flow; **SSH** uses your keys separately and is not limited by the PAT’s repository list.
 
+### Non-interactive shells (CI, Cursor agents, scripts)
+
+`direnv` hooks **interactive** shells only. For one-off commands with the same env as `.envrc`, run from the **repository root**:
+
+```bash
+direnv exec . git push
+direnv exec . gh pr status
+```
+
+That loads **`GH_TOKEN`** without relying on `cd` hooks. In **Cursor**, agent `git push` / `fetch` / `gh` also need tool permissions that allow **network** and reading **`~/.config/...`** (often **`all`** on the sandboxed runner); see root **`AGENTS.md`**.
+
 ## Secrets
 
 Never commit Evernote tokens, GitHub tokens, or `.enex` exports. The CLI reads **`.env`** for Evernote variables (see **`.env.example`** and the README); GitHub credentials belong only in paths like the env file above or your own secret store.
