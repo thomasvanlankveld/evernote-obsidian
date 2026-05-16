@@ -1,15 +1,11 @@
 import { resolve } from 'node:path';
 
-export const VAULT_DIR_DEPRECATION_WARNING =
-  'warning: --vault is deprecated; use --vault-dir instead';
-
 export interface VaultDirFlagState {
   explicitPath?: string | undefined;
-  usedDeprecatedAlias: boolean;
 }
 
 export function createVaultDirFlagState(): VaultDirFlagState {
-  return { usedDeprecatedAlias: false };
+  return {};
 }
 
 export type VaultDirFlagApplyResult =
@@ -22,20 +18,21 @@ export function applyVaultDirFlag(
   args: readonly string[],
   index: number,
   cwd: string,
-  state: VaultDirFlagState,
+  _state: VaultDirFlagState,
 ): VaultDirFlagApplyResult {
-  if (arg === '--vault-dir') {
+  if (arg === '--vault-dir' || arg === '--vault') {
     const v = args[index + 1];
     if (v === undefined || v.startsWith('-')) {
+      const flag = arg === '--vault-dir' ? '--vault-dir' : '--vault';
       return {
         kind: 'error',
-        message: 'error: --vault-dir requires a path (e.g. --vault-dir ./data)',
+        message: `error: ${flag} requires a path (e.g. ${flag} ./data)`,
       };
     }
     return {
       kind: 'handled',
       nextIndex: index + 1,
-      state: { explicitPath: resolve(cwd, v), usedDeprecatedAlias: state.usedDeprecatedAlias },
+      state: { explicitPath: resolve(cwd, v) },
     };
   }
   if (arg.startsWith('--vault-dir=')) {
@@ -46,21 +43,7 @@ export function applyVaultDirFlag(
     return {
       kind: 'handled',
       nextIndex: index,
-      state: { explicitPath: resolve(cwd, tail), usedDeprecatedAlias: state.usedDeprecatedAlias },
-    };
-  }
-  if (arg === '--vault') {
-    const v = args[index + 1];
-    if (v === undefined || v.startsWith('-')) {
-      return {
-        kind: 'error',
-        message: 'error: --vault requires a path (e.g. --vault ./data)',
-      };
-    }
-    return {
-      kind: 'handled',
-      nextIndex: index + 1,
-      state: { explicitPath: resolve(cwd, v), usedDeprecatedAlias: true },
+      state: { explicitPath: resolve(cwd, tail) },
     };
   }
   if (arg.startsWith('--vault=')) {
@@ -71,7 +54,7 @@ export function applyVaultDirFlag(
     return {
       kind: 'handled',
       nextIndex: index,
-      state: { explicitPath: resolve(cwd, tail), usedDeprecatedAlias: true },
+      state: { explicitPath: resolve(cwd, tail) },
     };
   }
   return { kind: 'not-vault-flag' };
@@ -80,8 +63,4 @@ export function applyVaultDirFlag(
 export function resolveVaultRootFromState(state: VaultDirFlagState, cwd: string): string {
   const defaultData = resolve(cwd, 'data');
   return state.explicitPath ?? defaultData;
-}
-
-export function writeVaultDeprecatedWarning(streams: { stderr: NodeJS.WritableStream }): void {
-  streams.stderr.write(`${VAULT_DIR_DEPRECATION_WARNING}\n`);
 }

@@ -85,11 +85,11 @@ describe('cli main', () => {
     assert.equal(j.collisions.length, 1);
   });
 
-  it('index warns on stderr when deprecated --vault is used', async () => {
+  it('index exits 0 with --vault alias', async () => {
     const { streams, out, err } = makeStreams();
     const code = await main(['index', '--vault', uniqueFixtureVault], streams);
     assert.equal(code, 0);
-    assert.match(err(), /--vault is deprecated/);
+    assert.equal(err(), '');
     const j = JSON.parse(out()) as { ok: boolean; count: number };
     assert.equal(j.ok, true);
     assert.equal(j.count, 3);
@@ -130,7 +130,7 @@ describe('cli main', () => {
     assert.match(err(), /unknown index flag: typo/);
   });
 
-  it('index exits 2 when deprecated --vault has no path', async () => {
+  it('index exits 2 when --vault has no path', async () => {
     const { streams, err } = makeStreams();
     const code = await main(['index', '--vault'], streams);
     assert.equal(code, 2);

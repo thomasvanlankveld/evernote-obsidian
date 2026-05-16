@@ -17,7 +17,7 @@ This CLI uses **metadata from a local Evernote backup** ([evernote-backup](https
 
 ### What to pass as `--vault-dir`
 
-`index`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. The older **`--vault`** flag is still accepted but prints a deprecation warning.
+`index`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. **`--vault`** is an equivalent alias.
 
 You can point at:
 

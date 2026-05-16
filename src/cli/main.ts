@@ -32,7 +32,6 @@ import {
   applyVaultDirFlag,
   createVaultDirFlagState,
   resolveVaultRootFromState,
-  writeVaultDeprecatedWarning,
 } from './vaultDirFlag.ts';
 
 export interface MainStreams {
@@ -71,9 +70,6 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    if (parsed.usedDeprecatedAlias) {
-      writeVaultDeprecatedWarning(streams);
-    }
     return runIndex(parsed.path, streams);
   }
 
@@ -92,9 +88,6 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    if (parsed.usedDeprecatedAlias) {
-      writeVaultDeprecatedWarning(streams);
-    }
     return runLinks(parsed.links, streams);
   }
 
@@ -104,9 +97,6 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    if (parsed.usedDeprecatedAlias) {
-      writeVaultDeprecatedWarning(streams);
-    }
     return runCorrelate(parsed.correlate, streams);
   }
 
@@ -115,9 +105,6 @@ export async function main(
     if (!parsed.ok) {
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
-    }
-    if (parsed.usedDeprecatedAlias) {
-      writeVaultDeprecatedWarning(streams);
     }
     return runRewrite(parsed.rewrite, streams);
   }
@@ -129,7 +116,7 @@ export async function main(
 function parseVaultRootForIndex(
   args: readonly string[],
   cwd: string,
-): { ok: true; path: string; usedDeprecatedAlias: boolean } | { ok: false; message: string } {
+): { ok: true; path: string } | { ok: false; message: string } {
   let vaultState = createVaultDirFlagState();
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -147,11 +134,7 @@ function parseVaultRootForIndex(
     }
     return { ok: false, message: unknownSubcommandFlagError('index', a) };
   }
-  return {
-    ok: true,
-    path: resolveVaultRootFromState(vaultState, cwd),
-    usedDeprecatedAlias: vaultState.usedDeprecatedAlias,
-  };
+  return { ok: true, path: resolveVaultRootFromState(vaultState, cwd) };
 }
 
 interface SnapshotCliOk {
@@ -225,7 +208,7 @@ interface LinksCliOk {
 function parseLinksArgs(
   args: readonly string[],
   cwd: string,
-): { ok: true; links: LinksCliOk; usedDeprecatedAlias: boolean } | { ok: false; message: string } {
+): { ok: true; links: LinksCliOk } | { ok: false; message: string } {
   let vaultState = createVaultDirFlagState();
   let skipOtherEvernoteHosts = false;
   let outPath: string | undefined;
@@ -267,7 +250,6 @@ function parseLinksArgs(
       skipOtherEvernoteHosts,
       outPath,
     },
-    usedDeprecatedAlias: vaultState.usedDeprecatedAlias,
   };
 }
 
@@ -281,9 +263,7 @@ interface CorrelateCliOk {
 function parseCorrelateArgs(
   args: readonly string[],
   cwd: string,
-):
-  | { ok: true; correlate: CorrelateCliOk; usedDeprecatedAlias: boolean }
-  | { ok: false; message: string } {
+): { ok: true; correlate: CorrelateCliOk } | { ok: false; message: string } {
   const defaultOut = resolve(cwd, 'out', 'link-map.json');
   let vaultState = createVaultDirFlagState();
   let snapshotPath: string | undefined;
@@ -357,7 +337,6 @@ function parseCorrelateArgs(
       overridesPath,
       outPath,
     },
-    usedDeprecatedAlias: vaultState.usedDeprecatedAlias,
   };
 }
 
@@ -372,9 +351,7 @@ interface RewriteCliOk {
 function parseRewriteArgs(
   args: readonly string[],
   cwd: string,
-):
-  | { ok: true; rewrite: RewriteCliOk; usedDeprecatedAlias: boolean }
-  | { ok: false; message: string } {
+): { ok: true; rewrite: RewriteCliOk } | { ok: false; message: string } {
   let vaultState = createVaultDirFlagState();
   let mapPath: string | undefined;
   let explicitDryRun = false;
@@ -470,7 +447,6 @@ function parseRewriteArgs(
       outDir: mode === 'out-dir' ? outDir : undefined,
       backup: backup ? true : undefined,
     },
-    usedDeprecatedAlias: vaultState.usedDeprecatedAlias,
   };
 }
 
@@ -737,7 +713,7 @@ function usage(): string {
     '',
     'Options:',
     '  --vault-dir                    Root directory of Markdown to scan (importer output, a subfolder, or full Obsidian vault; default: ./data)',
-    '  --vault                        Deprecated alias for --vault-dir',
+    '  --vault                        Alias for --vault-dir',
     '  --map                          Path to link map JSON (required for rewrite)',
     '  --dry-run                      Rewrite preview only (default when neither --out-dir nor --in-place)',
     '  --out-dir                      Write changed Markdown files under this directory (mirrors vault paths)',

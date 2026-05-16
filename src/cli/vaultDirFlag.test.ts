@@ -12,7 +12,7 @@ describe('vaultDirFlag', () => {
     assert.equal(path, '/cwd/data');
   });
 
-  it('applyVaultDirFlag marks --vault as deprecated', () => {
+  it('applyVaultDirFlag accepts --vault alias', () => {
     const applied = applyVaultDirFlag(
       '--vault',
       ['--vault', './v'],
@@ -23,7 +23,6 @@ describe('vaultDirFlag', () => {
     assert.equal(applied.kind, 'handled');
     if (applied.kind === 'handled') {
       assert.equal(applied.state.explicitPath, '/cwd/v');
-      assert.equal(applied.state.usedDeprecatedAlias, true);
     }
   });
 
@@ -37,7 +36,7 @@ describe('vaultDirFlag', () => {
     );
     assert.equal(applied.kind, 'handled');
     if (applied.kind === 'handled') {
-      assert.equal(applied.state.usedDeprecatedAlias, false);
+      assert.equal(applied.state.explicitPath, '/cwd/v');
     }
   });
 });
