@@ -26,7 +26,14 @@ import {
   VaultIndexRootError,
   walkVaultMarkdownFiles,
 } from '../vault/vaultIndex.ts';
+import { applyPathFlag, applyPositiveIntFlag, unknownSubcommandFlagError } from './cliFlags.ts';
 import { readCliPackageVersion } from './packageVersion.ts';
+import {
+  applyVaultDirFlag,
+  createVaultDirFlagState,
+  resolveVaultRootFromState,
+  writeVaultDeprecatedWarning,
+} from './vaultDirFlag.ts';
 
 export interface MainStreams {
   stdout: NodeJS.WritableStream;
@@ -64,6 +71,9 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
+    if (parsed.usedDeprecatedAlias) {
+      writeVaultDeprecatedWarning(streams);
+    }
     return runIndex(parsed.path, streams);
   }
 
@@ -82,6 +92,9 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
+    if (parsed.usedDeprecatedAlias) {
+      writeVaultDeprecatedWarning(streams);
+    }
     return runLinks(parsed.links, streams);
   }
 
@@ -91,6 +104,9 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
+    if (parsed.usedDeprecatedAlias) {
+      writeVaultDeprecatedWarning(streams);
+    }
     return runCorrelate(parsed.correlate, streams);
   }
 
@@ -99,6 +115,9 @@ export async function main(
     if (!parsed.ok) {
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
+    }
+    if (parsed.usedDeprecatedAlias) {
+      writeVaultDeprecatedWarning(streams);
     }
     return runRewrite(parsed.rewrite, streams);
   }
@@ -110,27 +129,29 @@ export async function main(
 function parseVaultRootForIndex(
   args: readonly string[],
   cwd: string,
-): { ok: true; path: string } | { ok: false; message: string } {
-  const defaultData = resolve(cwd, 'data');
-  let explicit: string | undefined;
+): { ok: true; path: string; usedDeprecatedAlias: boolean } | { ok: false; message: string } {
+  let vaultState = createVaultDirFlagState();
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '--vault') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return { ok: false, message: 'error: --vault requires a path (e.g. --vault ./data)' };
-      }
-      explicit = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--vault=')) {
-      const tail = a.slice('--vault='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --vault= requires a non-empty path' };
-      }
-      explicit = resolve(cwd, tail);
+    if (a === undefined) {
+      continue;
     }
+    const applied = applyVaultDirFlag(a, args, i, cwd, vaultState);
+    if (applied.kind === 'error') {
+      return { ok: false, message: applied.message };
+    }
+    if (applied.kind === 'handled') {
+      vaultState = applied.state;
+      i = applied.nextIndex;
+      continue;
+    }
+    return { ok: false, message: unknownSubcommandFlagError('index', a) };
   }
-  return { ok: true, path: explicit ?? defaultData };
+  return {
+    ok: true,
+    path: resolveVaultRootFromState(vaultState, cwd),
+    usedDeprecatedAlias: vaultState.usedDeprecatedAlias,
+  };
 }
 
 interface SnapshotCliOk {
@@ -151,56 +172,37 @@ function parseSnapshotArgs(
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '--db') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return {
-          ok: false,
-          message: 'error: --db requires a path (e.g. --db ./en_backup.db)',
-        };
-      }
-      dbPath = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--db=')) {
-      const tail = a.slice('--db='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --db= requires a non-empty path' };
-      }
-      dbPath = resolve(cwd, tail);
-    } else if (a === '--out') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return {
-          ok: false,
-          message: 'error: --out requires a path (e.g. --out ./out/evernote-notes.json)',
-        };
-      }
-      outPath = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--out=')) {
-      const tail = a.slice('--out='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --out= requires a non-empty path' };
-      }
-      outPath = resolve(cwd, tail);
-    } else if (a === '--max-notes') {
-      const v = args[i + 1];
-      const n = v !== undefined ? Number.parseInt(v, 10) : Number.NaN;
-      if (!Number.isFinite(n) || n < 1) {
-        return { ok: false, message: 'error: --max-notes must be a positive integer' };
-      }
-      maxRecords = n;
-      i++;
-    } else if (a?.startsWith('--max-notes=')) {
-      const tail = a.slice('--max-notes='.length);
-      const n = Number.parseInt(tail, 10);
-      if (!Number.isFinite(n) || n < 1) {
-        return { ok: false, message: 'error: --max-notes must be a positive integer' };
-      }
-      maxRecords = n;
-    } else {
-      return { ok: false, message: `error: unknown snapshot flag: ${a}` };
+    if (a === undefined) {
+      continue;
     }
+    const dbApplied = applyPathFlag(a, args, i, cwd, 'db', './en_backup.db');
+    if (dbApplied.kind === 'error') {
+      return { ok: false, message: dbApplied.message };
+    }
+    if (dbApplied.kind === 'handled') {
+      dbPath = dbApplied.path;
+      i = dbApplied.nextIndex;
+      continue;
+    }
+    const outApplied = applyPathFlag(a, args, i, cwd, 'out', './out/evernote-notes.json');
+    if (outApplied.kind === 'error') {
+      return { ok: false, message: outApplied.message };
+    }
+    if (outApplied.kind === 'handled') {
+      outPath = outApplied.path;
+      i = outApplied.nextIndex;
+      continue;
+    }
+    const maxApplied = applyPositiveIntFlag(a, args, i, 'max-notes');
+    if (maxApplied.kind === 'error') {
+      return { ok: false, message: maxApplied.message };
+    }
+    if (maxApplied.kind === 'handled') {
+      maxRecords = maxApplied.value;
+      i = maxApplied.nextIndex;
+      continue;
+    }
+    return { ok: false, message: unknownSubcommandFlagError('snapshot', a) };
   }
 
   if (dbPath === undefined) {
@@ -223,51 +225,50 @@ interface LinksCliOk {
 function parseLinksArgs(
   args: readonly string[],
   cwd: string,
-): { ok: true; links: LinksCliOk } | { ok: false; message: string } {
-  const defaultVault = resolve(cwd, 'data');
-  let vaultRoot = defaultVault;
+): { ok: true; links: LinksCliOk; usedDeprecatedAlias: boolean } | { ok: false; message: string } {
+  let vaultState = createVaultDirFlagState();
   let skipOtherEvernoteHosts = false;
   let outPath: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '--vault') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return { ok: false, message: 'error: --vault requires a path (e.g. --vault ./data)' };
-      }
-      vaultRoot = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--vault=')) {
-      const tail = a.slice('--vault='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --vault= requires a non-empty path' };
-      }
-      vaultRoot = resolve(cwd, tail);
-    } else if (a === '--skip-other-evernote-hosts') {
-      skipOtherEvernoteHosts = true;
-    } else if (a === '--out') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return {
-          ok: false,
-          message: 'error: --out requires a path (e.g. --out ./out/broken-links.json)',
-        };
-      }
-      outPath = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--out=')) {
-      const tail = a.slice('--out='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --out= requires a non-empty path' };
-      }
-      outPath = resolve(cwd, tail);
-    } else {
-      return { ok: false, message: `error: unknown links flag: ${a}` };
+    if (a === undefined) {
+      continue;
     }
+    const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
+    if (vaultApplied.kind === 'error') {
+      return { ok: false, message: vaultApplied.message };
+    }
+    if (vaultApplied.kind === 'handled') {
+      vaultState = vaultApplied.state;
+      i = vaultApplied.nextIndex;
+      continue;
+    }
+    if (a === '--skip-other-evernote-hosts') {
+      skipOtherEvernoteHosts = true;
+      continue;
+    }
+    const outApplied = applyPathFlag(a, args, i, cwd, 'out', './out/broken-links.json');
+    if (outApplied.kind === 'error') {
+      return { ok: false, message: outApplied.message };
+    }
+    if (outApplied.kind === 'handled') {
+      outPath = outApplied.path;
+      i = outApplied.nextIndex;
+      continue;
+    }
+    return { ok: false, message: unknownSubcommandFlagError('links', a) };
   }
 
-  return { ok: true, links: { vaultRoot, skipOtherEvernoteHosts, outPath } };
+  return {
+    ok: true,
+    links: {
+      vaultRoot: resolveVaultRootFromState(vaultState, cwd),
+      skipOtherEvernoteHosts,
+      outPath,
+    },
+    usedDeprecatedAlias: vaultState.usedDeprecatedAlias,
+  };
 }
 
 interface CorrelateCliOk {
@@ -280,81 +281,64 @@ interface CorrelateCliOk {
 function parseCorrelateArgs(
   args: readonly string[],
   cwd: string,
-): { ok: true; correlate: CorrelateCliOk } | { ok: false; message: string } {
-  const defaultVault = resolve(cwd, 'data');
+):
+  | { ok: true; correlate: CorrelateCliOk; usedDeprecatedAlias: boolean }
+  | { ok: false; message: string } {
   const defaultOut = resolve(cwd, 'out', 'link-map.json');
-  let vaultRoot = defaultVault;
+  let vaultState = createVaultDirFlagState();
   let snapshotPath: string | undefined;
   let overridesPath: string | undefined;
   let outPath = defaultOut;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '--vault') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return { ok: false, message: 'error: --vault requires a path (e.g. --vault ./data)' };
-      }
-      vaultRoot = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--vault=')) {
-      const tail = a.slice('--vault='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --vault= requires a non-empty path' };
-      }
-      vaultRoot = resolve(cwd, tail);
-    } else if (a === '--snapshot') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return {
-          ok: false,
-          message: 'error: --snapshot requires a path (e.g. --snapshot ./out/evernote-notes.json)',
-        };
-      }
-      snapshotPath = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--snapshot=')) {
-      const tail = a.slice('--snapshot='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --snapshot= requires a non-empty path' };
-      }
-      snapshotPath = resolve(cwd, tail);
-    } else if (a === '--overrides') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return {
-          ok: false,
-          message:
-            'error: --overrides requires a path (e.g. --overrides ./out/correlation-overrides.json)',
-        };
-      }
-      overridesPath = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--overrides=')) {
-      const tail = a.slice('--overrides='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --overrides= requires a non-empty path' };
-      }
-      overridesPath = resolve(cwd, tail);
-    } else if (a === '--out') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return {
-          ok: false,
-          message: 'error: --out requires a path (e.g. --out ./out/link-map.json)',
-        };
-      }
-      outPath = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--out=')) {
-      const tail = a.slice('--out='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --out= requires a non-empty path' };
-      }
-      outPath = resolve(cwd, tail);
-    } else {
-      return { ok: false, message: `error: unknown correlate flag: ${a}` };
+    if (a === undefined) {
+      continue;
     }
+    const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
+    if (vaultApplied.kind === 'error') {
+      return { ok: false, message: vaultApplied.message };
+    }
+    if (vaultApplied.kind === 'handled') {
+      vaultState = vaultApplied.state;
+      i = vaultApplied.nextIndex;
+      continue;
+    }
+    const snapshotApplied = applyPathFlag(a, args, i, cwd, 'snapshot', './out/evernote-notes.json');
+    if (snapshotApplied.kind === 'error') {
+      return { ok: false, message: snapshotApplied.message };
+    }
+    if (snapshotApplied.kind === 'handled') {
+      snapshotPath = snapshotApplied.path;
+      i = snapshotApplied.nextIndex;
+      continue;
+    }
+    const overridesApplied = applyPathFlag(
+      a,
+      args,
+      i,
+      cwd,
+      'overrides',
+      './out/correlation-overrides.json',
+    );
+    if (overridesApplied.kind === 'error') {
+      return { ok: false, message: overridesApplied.message };
+    }
+    if (overridesApplied.kind === 'handled') {
+      overridesPath = overridesApplied.path;
+      i = overridesApplied.nextIndex;
+      continue;
+    }
+    const outApplied = applyPathFlag(a, args, i, cwd, 'out', './out/link-map.json');
+    if (outApplied.kind === 'error') {
+      return { ok: false, message: outApplied.message };
+    }
+    if (outApplied.kind === 'handled') {
+      outPath = outApplied.path;
+      i = outApplied.nextIndex;
+      continue;
+    }
+    return { ok: false, message: unknownSubcommandFlagError('correlate', a) };
   }
 
   if (snapshotPath === undefined) {
@@ -367,7 +351,13 @@ function parseCorrelateArgs(
 
   return {
     ok: true,
-    correlate: { vaultRoot, snapshotPath, overridesPath, outPath },
+    correlate: {
+      vaultRoot: resolveVaultRootFromState(vaultState, cwd),
+      snapshotPath,
+      overridesPath,
+      outPath,
+    },
+    usedDeprecatedAlias: vaultState.usedDeprecatedAlias,
   };
 }
 
@@ -382,9 +372,10 @@ interface RewriteCliOk {
 function parseRewriteArgs(
   args: readonly string[],
   cwd: string,
-): { ok: true; rewrite: RewriteCliOk } | { ok: false; message: string } {
-  const defaultVault = resolve(cwd, 'data');
-  let vaultRoot = defaultVault;
+):
+  | { ok: true; rewrite: RewriteCliOk; usedDeprecatedAlias: boolean }
+  | { ok: false; message: string } {
+  let vaultState = createVaultDirFlagState();
   let mapPath: string | undefined;
   let explicitDryRun = false;
   let outDir: string | undefined;
@@ -393,60 +384,49 @@ function parseRewriteArgs(
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '--vault') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return { ok: false, message: 'error: --vault requires a path (e.g. --vault ./data)' };
-      }
-      vaultRoot = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--vault=')) {
-      const tail = a.slice('--vault='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --vault= requires a non-empty path' };
-      }
-      vaultRoot = resolve(cwd, tail);
-    } else if (a === '--map') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return {
-          ok: false,
-          message: 'error: --map requires a path (e.g. --map ./out/link-map.json)',
-        };
-      }
-      mapPath = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--map=')) {
-      const tail = a.slice('--map='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --map= requires a non-empty path' };
-      }
-      mapPath = resolve(cwd, tail);
-    } else if (a === '--dry-run') {
-      explicitDryRun = true;
-    } else if (a === '--out-dir') {
-      const v = args[i + 1];
-      if (v === undefined || v.startsWith('-')) {
-        return {
-          ok: false,
-          message: 'error: --out-dir requires a path (e.g. --out-dir ./out/rewritten-vault)',
-        };
-      }
-      outDir = resolve(cwd, v);
-      i++;
-    } else if (a?.startsWith('--out-dir=')) {
-      const tail = a.slice('--out-dir='.length);
-      if (tail === '') {
-        return { ok: false, message: 'error: --out-dir= requires a non-empty path' };
-      }
-      outDir = resolve(cwd, tail);
-    } else if (a === '--in-place') {
-      inPlace = true;
-    } else if (a === '--backup') {
-      backup = true;
-    } else {
-      return { ok: false, message: `error: unknown rewrite flag: ${a}` };
+    if (a === undefined) {
+      continue;
     }
+    const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
+    if (vaultApplied.kind === 'error') {
+      return { ok: false, message: vaultApplied.message };
+    }
+    if (vaultApplied.kind === 'handled') {
+      vaultState = vaultApplied.state;
+      i = vaultApplied.nextIndex;
+      continue;
+    }
+    const mapApplied = applyPathFlag(a, args, i, cwd, 'map', './out/link-map.json');
+    if (mapApplied.kind === 'error') {
+      return { ok: false, message: mapApplied.message };
+    }
+    if (mapApplied.kind === 'handled') {
+      mapPath = mapApplied.path;
+      i = mapApplied.nextIndex;
+      continue;
+    }
+    if (a === '--dry-run') {
+      explicitDryRun = true;
+      continue;
+    }
+    const outDirApplied = applyPathFlag(a, args, i, cwd, 'out-dir', './out/rewritten-vault');
+    if (outDirApplied.kind === 'error') {
+      return { ok: false, message: outDirApplied.message };
+    }
+    if (outDirApplied.kind === 'handled') {
+      outDir = outDirApplied.path;
+      i = outDirApplied.nextIndex;
+      continue;
+    }
+    if (a === '--in-place') {
+      inPlace = true;
+      continue;
+    }
+    if (a === '--backup') {
+      backup = true;
+      continue;
+    }
+    return { ok: false, message: unknownSubcommandFlagError('rewrite', a) };
   }
 
   if (mapPath === undefined) {
@@ -484,12 +464,13 @@ function parseRewriteArgs(
   return {
     ok: true,
     rewrite: {
-      vaultRoot,
+      vaultRoot: resolveVaultRootFromState(vaultState, cwd),
       mapPath,
       mode,
       outDir: mode === 'out-dir' ? outDir : undefined,
       backup: backup ? true : undefined,
     },
+    usedDeprecatedAlias: vaultState.usedDeprecatedAlias,
   };
 }
 
@@ -741,11 +722,11 @@ function usage(): string {
     '',
     'Usage:',
     '  evernote-obsidian [--help|--version]',
-    '  evernote-obsidian index [--vault <path>]',
+    '  evernote-obsidian index [--vault-dir <path>]',
     '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',
-    '  evernote-obsidian links [--vault <path>] [--out <path>] [--skip-other-evernote-hosts]',
-    '  evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]',
-    '  evernote-obsidian rewrite --map <path> [--vault <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
+    '  evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]',
+    '  evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>]',
+    '  evernote-obsidian rewrite --map <path> [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '',
     'Commands:',
     '  index      Build a read-only vault index (normalized titles must be unique).',
@@ -755,7 +736,8 @@ function usage(): string {
     '  rewrite    Replace Evernote note URLs with Obsidian wikilinks using link-map.json from correlate.',
     '',
     'Options:',
-    '  --vault                        Vault root directory (default: ./data relative to cwd)',
+    '  --vault-dir                    Root directory of Markdown to scan (importer output, a subfolder, or full Obsidian vault; default: ./data)',
+    '  --vault                        Deprecated alias for --vault-dir',
     '  --map                          Path to link map JSON (required for rewrite)',
     '  --dry-run                      Rewrite preview only (default when neither --out-dir nor --in-place)',
     '  --out-dir                      Write changed Markdown files under this directory (mirrors vault paths)',

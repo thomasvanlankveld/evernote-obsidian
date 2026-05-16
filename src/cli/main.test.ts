@@ -67,7 +67,7 @@ describe('cli main', () => {
 
   it('index exits 0 and prints JSON for a unique vault', async () => {
     const { streams, out, err } = makeStreams();
-    const code = await main(['index', '--vault', uniqueFixtureVault], streams);
+    const code = await main(['index', '--vault-dir', uniqueFixtureVault], streams);
     assert.equal(code, 0);
     assert.equal(err(), '');
     const j = JSON.parse(out()) as { ok: boolean; count: number };
@@ -77,7 +77,7 @@ describe('cli main', () => {
 
   it('index exits 1 with collisions JSON on stderr', async () => {
     const { streams, out, err } = makeStreams();
-    const code = await main(['index', '--vault', collisionFixtureVault], streams);
+    const code = await main(['index', '--vault-dir', collisionFixtureVault], streams);
     assert.equal(code, 1);
     assert.equal(out(), '');
     const j = JSON.parse(err()) as { ok: boolean; collisions: unknown[] };
@@ -85,31 +85,62 @@ describe('cli main', () => {
     assert.equal(j.collisions.length, 1);
   });
 
-  it('index exits 2 when --vault has no path', async () => {
+  it('index warns on stderr when deprecated --vault is used', async () => {
+    const { streams, out, err } = makeStreams();
+    const code = await main(['index', '--vault', uniqueFixtureVault], streams);
+    assert.equal(code, 0);
+    assert.match(err(), /--vault is deprecated/);
+    const j = JSON.parse(out()) as { ok: boolean; count: number };
+    assert.equal(j.ok, true);
+    assert.equal(j.count, 3);
+  });
+
+  it('index exits 2 when --vault-dir has no path', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['index', '--vault-dir'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--vault-dir requires a path/);
+  });
+
+  it('index exits 2 when --vault-dir is followed by another flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['index', '--vault-dir', '--help'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--vault-dir requires a path/);
+  });
+
+  it('index exits 2 when --vault-dir= has empty value', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['index', '--vault-dir='], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--vault-dir=/);
+  });
+
+  it('index exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['index', '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown index flag: --nope/);
+  });
+
+  it('index exits 2 on extra positional arguments', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['index', '--vault-dir', uniqueFixtureVault, 'typo', 'extra'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown index flag: typo/);
+  });
+
+  it('index exits 2 when deprecated --vault has no path', async () => {
     const { streams, err } = makeStreams();
     const code = await main(['index', '--vault'], streams);
     assert.equal(code, 2);
     assert.match(err(), /--vault requires a path/);
   });
 
-  it('index exits 2 when --vault is followed by another flag', async () => {
-    const { streams, err } = makeStreams();
-    const code = await main(['index', '--vault', '--help'], streams);
-    assert.equal(code, 2);
-    assert.match(err(), /--vault requires a path/);
-  });
-
-  it('index exits 2 when --vault= has empty value', async () => {
-    const { streams, err } = makeStreams();
-    const code = await main(['index', '--vault='], streams);
-    assert.equal(code, 2);
-    assert.match(err(), /--vault=/);
-  });
-
   it('index exits 2 when vault root is not a directory', async () => {
     const { streams, err } = makeStreams();
     const fileVault = join(cliDir, '../vault/__fixtures__/unique/first.md');
-    const code = await main(['index', '--vault', fileVault], streams);
+    const code = await main(['index', '--vault-dir', fileVault], streams);
     assert.equal(code, 2);
     assert.match(err(), /^index: /);
   });
@@ -180,7 +211,7 @@ describe('cli main', () => {
 
   it('links exits 0 and prints JSON with extracted rows', async () => {
     const { streams, out, err } = makeStreams();
-    const code = await main(['links', '--vault', linksFixtureDir], streams);
+    const code = await main(['links', '--vault-dir', linksFixtureDir], streams);
     assert.equal(code, 0);
     assert.equal(err(), '');
     const j = JSON.parse(out()) as { ok: boolean; links: { parsedGuid: string | null }[] };
@@ -227,7 +258,7 @@ describe('cli main', () => {
     try {
       const { streams, out, err } = makeStreams();
       const code = await main(
-        ['correlate', '--vault', uniqueFixtureVault, '--snapshot', snapPath, '--out', outPath],
+        ['correlate', '--vault-dir', uniqueFixtureVault, '--snapshot', snapPath, '--out', outPath],
         streams,
         { cwd: dir },
       );
@@ -264,7 +295,7 @@ describe('cli main', () => {
     try {
       const { streams, out, err } = makeStreams();
       const code = await main(
-        ['correlate', '--vault', uniqueFixtureVault, '--snapshot', snapPath, '--out', outPath],
+        ['correlate', '--vault-dir', uniqueFixtureVault, '--snapshot', snapPath, '--out', outPath],
         streams,
         { cwd: dir },
       );
@@ -319,9 +350,13 @@ describe('cli main', () => {
     await writeFile(mapPath, JSON.stringify(map), 'utf8');
     try {
       const { streams, out, err } = makeStreams();
-      const code = await main(['rewrite', '--vault', linksFixtureDir, '--map', mapPath], streams, {
-        cwd: dir,
-      });
+      const code = await main(
+        ['rewrite', '--vault-dir', linksFixtureDir, '--map', mapPath],
+        streams,
+        {
+          cwd: dir,
+        },
+      );
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summary = JSON.parse(out()) as {
@@ -358,7 +393,7 @@ describe('cli main', () => {
     try {
       const { streams, out, err } = makeStreams();
       const code = await main(
-        ['rewrite', '--vault', linksFixtureDir, '--map', mapPath, '--out-dir', outVault],
+        ['rewrite', '--vault-dir', linksFixtureDir, '--map', mapPath, '--out-dir', outVault],
         streams,
         { cwd: dir },
       );

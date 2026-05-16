@@ -12,12 +12,12 @@ This CLI uses **metadata from a local Evernote backup** ([evernote-backup](https
 
 - [nvm](https://github.com/nvm-sh/nvm) (or another Node version manager you prefer)
 - Node **24** (see `.nvmrc`)
-- Markdown from Obsidian’s **Import from Evernote** ([help](https://obsidian.md/help/import/evernote) · [plugin](https://obsidian.md/help/plugins/importer) · [GitHub](https://github.com/obsidianmd/obsidian-importer)) — usually still with broken `evernote://…` / shard links — on disk as a **folder you pass to `--vault`** (a single importer output tree is enough; a full vault with `.obsidian` is not required; see below)
+- Markdown from Obsidian’s **Import from Evernote** ([help](https://obsidian.md/help/import/evernote) · [plugin](https://obsidian.md/help/plugins/importer) · [GitHub](https://github.com/obsidianmd/obsidian-importer)) — usually still with broken `evernote://…` / shard links — on disk as a **folder you pass to `--vault-dir`** (a single importer output tree is enough; a full vault with `.obsidian` is not required; see below)
 - A synced **[evernote-backup](https://github.com/vzhd1701/evernote-backup)** SQLite database for GUID ↔ title metadata
 
-### What to pass as `--vault`
+### What to pass as `--vault-dir`
 
-`index`, `correlate`, `links`, and `rewrite` all take **`--vault <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**.
+`index`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. The older **`--vault`** flag is still accepted but prints a deprecation warning.
 
 You can point at:
 
@@ -40,14 +40,14 @@ Optional: **`index`** (preflight title uniqueness), **`links`** (report remainin
 
 After `npm install` and `npm run build`, the **`evernote-obsidian`** CLI is available (the npm package name matches the tool; see `package.json` `bin`).
 
-- **`evernote-obsidian index [--vault <path>]`** — Walk **`--vault`** (default `./data`) and report whether normalized titles are unique enough for correlation.
+- **`evernote-obsidian index [--vault-dir <path>]`** — Walk **`--vault-dir`** (default `./data`) and report whether normalized titles are unique enough for correlation.
 - **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).
 
-- **`evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]`** — Join snapshot rows to Markdown under **`--vault`** using the same **normalized title** rules as `index`, and write **`./out/link-map.json`** by default (GUID → path relative to **`--vault`**). Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping.
+- **`evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>]`** — Join snapshot rows to Markdown under **`--vault-dir`** using the same **normalized title** rules as `index`, and write **`./out/link-map.json`** by default (GUID → path relative to **`--vault-dir`**). Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping.
 
-- **`evernote-obsidian links [--vault <path>] [--out <path>] [--skip-other-evernote-hosts]`** — Scan Markdown under **`--vault`** for **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` links for reporting). Default is JSON on stdout; **`--out`** writes a report file.
+- **`evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]`** — Scan Markdown under **`--vault-dir`** for **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` links for reporting). Default is JSON on stdout; **`--out`** writes a report file.
 
-- **`evernote-obsidian rewrite --map <path> [--vault <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Replace Evernote **note** URLs with **`[[path|alias]]`** wikilinks (paths relative to **`--vault`**) using **`link-map.json`** from `correlate`. With no output mode flag, **`--dry-run`** is implied: counts changes without writing. **`--out-dir`** writes a mirror of the tree under **`--vault`** containing only files that changed. **`--in-place`** overwrites those Markdown files; add **`--backup`** to write **`<file>.evernote-obsidian.bak`** before each overwrite.
+- **`evernote-obsidian rewrite --map <path> [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Replace Evernote **note** URLs with **`[[path|alias]]`** wikilinks (paths relative to **`--vault-dir`**) using **`link-map.json`** from `correlate`. With no output mode flag, **`--dry-run`** is implied: counts changes without writing. **`--out-dir`** writes a mirror of the tree under **`--vault-dir`** containing only files that changed. **`--in-place`** overwrites those Markdown files; add **`--backup`** to write **`<file>.evernote-obsidian.bak`** before each overwrite.
 
 Create the database with upstream’s **`evernote-backup init-db`** / **`sync`** (their README covers OAuth and Yinxiang). Then point **`--db`** at that file (often `en_backup.db`).
 
@@ -69,7 +69,7 @@ These boundaries are intentional for an early, personal tool.
 
 ## Restoring `data/` on a new machine
 
-`data/` is not in git. Copy a folder of imported `.md` files into `data/` locally, symlink your importer output or Obsidian vault tree there, or pass **`--vault`** to any path on disk.
+`data/` is not in git. Copy a folder of imported `.md` files into `data/` locally, symlink your importer output or Obsidian vault tree there, or pass **`--vault-dir`** to any path on disk.
 
 ## Security
 
