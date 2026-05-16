@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-14 (Phase 6: rewrite; `rewrite` CLI)
+**Last updated:** 2026-05-14 (Phase 7: hardening; golden tests, README)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -105,9 +105,9 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 
 ### Phase 7 — Hardening
 
-- Golden-file tests on miniature vaults.
-- Encoding / Unicode / punctuation in titles; percent-encoding in URLs.
-- README: commands, security reminders.
+- [x] Golden-file tests on miniature vaults.
+- [x] Encoding / Unicode / punctuation in titles; percent-encoding in URLs.
+- [x] README: commands, security reminders.
 
 ## 6. Risks
 

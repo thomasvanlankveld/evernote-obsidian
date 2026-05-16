@@ -32,6 +32,38 @@ describe('correlateSnapshotToGuidPaths', () => {
     }
   });
 
+  it('matches Evernote titles in NFD to vault entries indexed with NFC unicode', () => {
+    const vault = vaultIndexResultToCorrelationInput(new Map([['café', 'café.md']]), ['café.md']);
+    const nfdTitle = `caf\u0065\u0301`;
+    const notes: NoteRecord[] = [
+      { guid: 'g-cafe', title: nfdTitle, updated: '1970-01-01T00:00:00.000Z' },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.guidToPath.get('g-cafe'), 'café.md');
+    }
+  });
+
+  it('correlates titles containing punctuation and collapses Evernote title whitespace', () => {
+    const vault = vaultIndexResultToCorrelationInput(
+      new Map([['hello: world (v2)', 'Hello: World (v2).md']]),
+      ['Hello: World (v2).md'],
+    );
+    const notes: NoteRecord[] = [
+      {
+        guid: 'g-punct',
+        title: '  Hello:   World (v2)  ',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.guidToPath.get('g-punct'), 'Hello: World (v2).md');
+    }
+  });
+
   it('reports unmatched when title is missing from vault index', () => {
     const notes: NoteRecord[] = [
       { guid: 'gx', title: 'Nobody has this title', updated: '1970-01-01T00:00:00.000Z' },

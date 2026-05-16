@@ -28,6 +28,13 @@ describe('tryParseNoteGuidFromUrl', () => {
     assert.equal(g, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
   });
 
+  it('parses percent-encoded hex digits in shard /n/ paths', () => {
+    const g = tryParseNoteGuidFromUrl(
+      'https://www.evernote.com/shard/s308/n/%63%63%63%63%63%63%63%63-%63%63%63%63-%63%63%63%63-%63%63%63%63-%63%63%63%63%63%63%63%63%63%63%63%63',
+    );
+    assert.equal(g, 'cccccccc-cccc-cccc-cccc-cccccccccccc');
+  });
+
   it('parses evernote:///view style', () => {
     const g = tryParseNoteGuidFromUrl(
       'evernote:///view/153/s308/cccccccc-cccc-cccc-cccc-cccccccccccc',

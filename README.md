@@ -22,6 +22,10 @@ After `npm install` and `npm run build`, the **`evernote-obsidian`** CLI is avai
 
 - **`evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]`** — Join snapshot rows to vault Markdown files using the same **normalized title** rules as `index`, and write **`./out/link-map.json`** by default (GUID → vault-relative path). Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping.
 
+- **`evernote-obsidian links [--vault <path>] [--out <path>] [--skip-other-evernote-hosts]`** — Scan Markdown for **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` links for reporting). Default is JSON on stdout; **`--out`** writes a report file.
+
+- **`evernote-obsidian rewrite --map <path> [--vault <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Replace Evernote **note** URLs with **`[[vault-relative-path|alias]]`** wikilinks using **`link-map.json`** from `correlate`. With no output mode flag, **`--dry-run`** is implied: counts changes without writing. **`--out-dir`** writes a mirror of the vault tree containing only files that changed. **`--in-place`** overwrites vault Markdown; add **`--backup`** to write **`<file>.evernote-obsidian.bak`** before each overwrite.
+
 Create the database with upstream’s **`evernote-backup init-db`** / **`sync`** (their README covers OAuth and Yinxiang). Then point **`--db`** at that file (often `en_backup.db`).
 
 **Implementation note:** Node’s built-in **`node:sqlite`** is used in **read-only** mode. As of Node 24 it may log an experimental-feature warning; the reader only runs plain SQL (`guid`, `title` from the `notes` table).
@@ -41,14 +45,12 @@ These boundaries are intentional for an early, personal migration tool.
 ## Security
 
 - Never commit a backup **`.db`** file, GitHub tokens, or `.enex` exports that contain private notes unless this repo is strictly private and you accept the risk.
+- **`link-map.json`**, broken-link reports, and **`*.evernote-obsidian.bak`** files can embed **absolute paths** to your vault or home directory. Treat them like secrets if paths are sensitive, and scrub before sharing logs or opening issues upstream.
+- **`rewrite --in-place`** changes your real Markdown; prefer **`--dry-run`** first, then **`--out-dir`** on a copy, and only use **`--in-place --backup`** when you are satisfied with the diff. OAuth tokens for **evernote-backup** live outside this repo; follow upstream guidance on where those credentials are stored.
 
 ## Contributing
 
 Local build commands and **optional** Git / GitHub notes (no prescribed credential layout in git): [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Next steps (for later implementation)
-
-Rough direction only: **rewrite** `evernote:///…` (and shard URLs) using the link map (`correlate` output), dry-run and backups, then golden tests. See [docs/edds/2026-05-10-evernote-obsidian-migration.edd.md](docs/edds/2026-05-10-evernote-obsidian-migration.edd.md) for phased detail.
 
 ## Context
 
