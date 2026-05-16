@@ -4,10 +4,9 @@
 # Dependencies
 node_modules/
 
-# Secrets (Evernote API tokens, etc.)
+# Local env files (CLI does not load them; kept gitignored if you use them for tooling)
 .env
 .env.*
-!.env.example
 
 # Local shell hooks (optional direnv; not tracked)
 .envrc
