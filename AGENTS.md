@@ -2,13 +2,15 @@ Be concise.
 
 ## Git — automated agents (Cursor, etc.)
 
-**Use a worktree under `.worktrees/<slug>/` inside this repo for all edits and commits**, not the primary clone root while “on a branch” elsewhere.
+**Work from `.worktrees/<slug>/`**, not the primary clone. Automation enforces this; do not duplicate hook logic here.
 
-1. `git worktree add .worktrees/<slug>/ -b feat/<topic> origin/main` (or reuse an existing tree on your branch). Stay under `./.worktrees/`, not a sibling path outside the repo.
-2. Move the **workspace / agent root** to that folder (Cursor: Move agent to root, or open that folder) so cwd and edits match.
-3. Tests, commits, and PRs only from there.
+1. `npm run agent:worktree -- <issue#> [<short-topic>]` — validates the issue (when numeric), creates `.worktrees/<issue>-<topic>` and `feat/<issue>-<topic>` from `origin/main`, prints the path.
+2. Move the **workspace / agent root** to the printed `.worktrees/…` path ([`scripts/agent-worktree.sh`](scripts/agent-worktree.sh), [`scripts/ensure-agent-worktree.sh`](scripts/ensure-agent-worktree.sh)).
+3. Commit with `Closes #N` when fixing an issue. Tests, commits, and PRs only from the worktree.
 
-**Humans:** worktree optional.
+**Humans:** worktree optional; `ALLOW_PRIMARY_CLONE=1` skips the guard. Set `EVERNOTE_OBSIDIAN_AGENT=1` only when you want Husky to require a worktree on commit.
+
+**Cursor:** [`.cursor/hooks.json`](.cursor/hooks.json) runs the same guard at session start and sets agent mode.
 
 **Everyone:** No push to `main` (PR only). Prefer merge over rebase. No `push --force` / `rebase` / `reset --hard` / `commit --amend` on shared history unless this chat asks.
 

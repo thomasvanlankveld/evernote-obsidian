@@ -20,6 +20,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "node --test 'src/**/*.test.ts'",
+    "agent:worktree": "sh scripts/agent-worktree.sh",
     "prepare": "husky"
   },
   "devDependencies": {

@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+if [ "${EVERNOTE_OBSIDIAN_AGENT:-}" = "1" ]; then
+	./scripts/ensure-agent-worktree.sh
+fi
