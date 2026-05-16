@@ -52,10 +52,6 @@ These boundaries are intentional for an early, personal migration tool.
 
 Local build commands and **optional** Git / GitHub notes (no prescribed credential layout in git): [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Roadmap
-
-Further ideas (not committed scope) live in [docs/edds/2026-05-10-evernote-obsidian-migration.edd.md](docs/edds/2026-05-10-evernote-obsidian-migration.edd.md).
-
 ## Context
 
 - [Import from Evernote – Obsidian Help](https://obsidian.md/help/import/evernote)
