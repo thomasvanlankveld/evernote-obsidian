@@ -41,7 +41,7 @@ describe('golden miniature vault (rewrite --out-dir)', () => {
     try {
       const { streams, out, err } = makeStreams();
       const code = await main(
-        ['rewrite', '--vault', vaultRoot, '--map', mapPath, '--out-dir', outVault],
+        ['rewrite', '--vault-dir', vaultRoot, '--map', mapPath, '--out-dir', outVault],
         streams,
         { cwd: tmp },
       );
