@@ -10,6 +10,10 @@ Notes for anyone working **in this repository**: local checks and **optional** G
 - **Tests:** `npm test`
 - **Lint:** `npm run lint` — `npm run format` applies Biome fixes.
 
+## Continuous integration
+
+On pull requests and pushes to `main`, [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `npm ci`, then `npm run lint`, `npm test`, and `npm run build` on Node **24** (see `.nvmrc`).
+
 ## Git and GitHub (your machine, your rules)
 
 **HTTPS + `gh` (no repo-local token file):** run **`gh auth login`** once, then **`gh auth setup-git`**. Git uses `gh` as its credential helper; tokens live in **`gh`’s config under your home directory**, not in this repo. **SSH** or another helper is fine if you prefer.
