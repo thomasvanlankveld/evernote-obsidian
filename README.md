@@ -1,17 +1,29 @@
-# Evernote → Obsidian migration
+# Evernote link repair for Obsidian
 
-Personal tooling to move notes from Evernote into Obsidian when the stock import path leaves **internal links broken**.
+Personal tooling to **fix broken internal links** in an Obsidian vault **after** you import from Evernote with [Obsidian Importer](https://obsidian.md/help/import/evernote). It does not export or import notes—that step is upstream.
 
 ## Why this exists
 
 The usual flow is: export `.enex` from Evernote, import with Obsidian’s [Importer](https://obsidian.md/help/import/evernote). That works for content, but note-to-note links often stay as `evernote:///…` URLs because the export does not carry enough stable identifiers for importers to rewrite them—see [obsidian-importer#306](https://github.com/obsidianmd/obsidian-importer/issues/306). For a large vault with many internal links, fixing that by hand is not practical.
 
-A complementary approach is to use **metadata from a local Evernote backup** ([evernote-backup](https://github.com/vzhd1701/evernote-backup)) to build a mapping from those URLs or note identities to the Markdown files Obsidian actually created, then rewrite links in bulk. This repo is a place to grow that kind of automation.
+This CLI uses **metadata from a local Evernote backup** ([evernote-backup](https://github.com/vzhd1701/evernote-backup)) to map those URLs (and note GUIDs) to the Markdown files Importer created, then rewrites links in bulk.
 
 ## Prerequisites
 
 - [nvm](https://github.com/nvm-sh/nvm) (or another Node version manager you prefer)
 - Node **24** (see `.nvmrc`)
+- An Obsidian vault that already contains imported notes (with broken Evernote links)
+- A synced **[evernote-backup](https://github.com/vzhd1701/evernote-backup)** SQLite database for GUID ↔ title metadata
+
+## Workflow
+
+Typical order (each step is a separate CLI invocation; see [#30](https://github.com/thomasvanlankveld/evernote-obsidian/issues/30) for a possible single `run` command later):
+
+1. **`snapshot`** — read GUID + title from evernote-backup → `evernote-notes.json`
+2. **`correlate`** — match snapshot rows to vault files → `link-map.json`
+3. **`rewrite`** — replace Evernote note URLs with Obsidian wikilinks (`--dry-run` first, then `--out-dir` or `--in-place`)
+
+Optional: **`index`** (preflight title uniqueness), **`links`** (report remaining Evernote URLs without writing).
 
 ## Commands (implemented so far)
 
@@ -30,9 +42,15 @@ Create the database with upstream’s **`evernote-backup init-db`** / **`sync`**
 
 **Implementation note:** Node’s built-in **`node:sqlite`** is used in **read-only** mode. As of Node 24 it may log an experimental-feature warning; the reader only runs plain SQL (`guid`, `title` from the `notes` table).
 
+## Known limitations
+
+- **Title-only correlation (v1):** `correlate` matches Evernote snapshot rows to vault files by **normalized title** (filename or frontmatter `title:`). If Importer changed a title, you renamed files, or two notes collide after normalization, correlation fails or needs manual **`byGuid` overrides**. Future: GUID in frontmatter ([#29](https://github.com/thomasvanlankveld/evernote-obsidian/issues/29)).
+- **Link hosts:** `links` / `rewrite` target **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` for reporting). **Regional products** (e.g. Yinxiang / 印象笔记 on non-`evernote.com` domains) are **out of scope** unless URLs in your vault use the shapes above. evernote-backup can still sync Yinxiang metadata into the SQLite DB for `snapshot`.
+- **Not a full YAML parser:** Frontmatter support is a line-based subset (`title:` only today). See the EDD for details.
+
 ## Evernote snapshot: limits
 
-These boundaries are intentional for an early, personal migration tool.
+These boundaries are intentional for an early, personal tool.
 
 - **Source:** Only databases produced by **[evernote-backup](https://github.com/vzhd1701/evernote-backup)** with the expected **`notes`** table are supported. Other SQLite exports are rejected with a clear error.
 - **Rows included:** Non-trashed notes (`is_active` not `0`) with non-empty `guid` and `title`. Rows still missing `is_active` (pending sync in the backup tool) are treated as active.

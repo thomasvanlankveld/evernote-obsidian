@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Tools for migrating Evernote → Obsidian with usable internal links",
+  "description": "Fix Evernote internal links in an Obsidian vault after Obsidian Importer",
   "type": "module",
   "engines": {
     "node": ">=24"
