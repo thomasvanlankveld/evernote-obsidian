@@ -16,4 +16,4 @@ Notes for anyone working **in this repository**: local checks and **optional** G
 
 ## Secrets
 
-Never commit Evernote backup databases, GitHub tokens, or `.enex` exports that contain private data. The CLI does not read a **`.env`** file; use command flags (see [README.md](README.md)).
+Never commit Evernote backup databases, GitHub tokens, or `.enex` exports that contain private data.
