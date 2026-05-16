@@ -12,8 +12,7 @@ This CLI uses **metadata from a local Evernote backup** ([evernote-backup](https
 
 - [nvm](https://github.com/nvm-sh/nvm) (or another Node version manager you prefer)
 - Node **24** (see `.nvmrc`)
-- **Imported notes** from Obsidian’s Evernote import ([help](https://obsidian.md/help/import/evernote) · [plugin](https://obsidian.md/help/plugins/importer) · [GitHub](https://github.com/obsidianmd/obsidian-importer)) — still containing broken `evernote://…` (or shard) links where internal links were not converted
-- A folder of those `.md` files to pass as **`--vault`** (see below — a full Obsidian vault is **not** required)
+- Markdown from Obsidian’s **Import from Evernote** ([help](https://obsidian.md/help/import/evernote) · [plugin](https://obsidian.md/help/plugins/importer) · [GitHub](https://github.com/obsidianmd/obsidian-importer)) — usually still with broken `evernote://…` / shard links — on disk as a **folder you pass to `--vault`** (a single importer output tree is enough; a full vault with `.obsidian` is not required; see below)
 - A synced **[evernote-backup](https://github.com/vzhd1701/evernote-backup)** SQLite database for GUID ↔ title metadata
 
 ### What to pass as `--vault`
