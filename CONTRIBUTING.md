@@ -16,4 +16,4 @@ Notes for anyone working **in this repository**: local checks and **optional** G
 
 ## Secrets
 
-Never commit Evernote backup databases, GitHub tokens, or `.enex` exports that contain private data. A local **`.env`** is optional (see **`.env.example`**).
+Never commit Evernote backup databases, GitHub tokens, or `.enex` exports that contain private data.
