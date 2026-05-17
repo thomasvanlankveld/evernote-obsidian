@@ -38,7 +38,9 @@ evernote-obsidian run --vault-dir /path/to/imported-notes --db /path/to/en_backu
 evernote-obsidian run --vault-dir /path/to/imported-notes --db /path/to/en_backup.db --out-dir ./out/rewritten-vault
 ```
 
-`run` chains **snapshot → correlate → rewrite**. Use **`--dry-run`** explicitly if you like (it is the default when neither **`--out-dir`** nor **`--in-place`** is set). Re-run with **`--snapshot`** and/or **`--map`** to skip steps when intermediate files already exist.
+`run` chains **snapshot → correlate → rewrite**. Use **`--dry-run`** explicitly if you like (it is the default when neither **`--out-dir`** nor **`--in-place`** is set). Re-run with **`--snapshot`** and/or **`--map`** to skip steps when intermediate files already exist (map-only runs rewrite only).
+
+Each step prints a JSON summary on stdout (pretty-printed). For scripting, parse brace-balanced JSON objects or use the step commands separately.
 
 ## Workflow
 
@@ -54,7 +56,7 @@ Optional: **`index`** (preflight title uniqueness), **`links`** (report remainin
 
 ## Commands
 
-- **`evernote-obsidian run --vault-dir <path> --db <path> [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Run the full pipeline. Requires explicit **`--vault-dir`** (or **`--vault`**). **`--out`** sets the snapshot JSON path (default `./out/evernote-notes.json`); **`--map-out`** sets the link map path (default `./out/link-map.json`). Pass **`--snapshot`** / **`--map`** to reuse existing files and skip those steps.
+- **`evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Run the full pipeline. Requires explicit **`--vault-dir`** (or **`--vault`**). **`--db`** is required on a fresh run; omit it when reusing **`--snapshot`** and/or **`--map`**. **`--out`** sets the snapshot JSON path when generating a snapshot (default `./out/evernote-notes.json`); **`--map-out`** sets the link map path (default `./out/link-map.json`). Pass **`--snapshot`** / **`--map`** to skip those steps.
 
 - **`evernote-obsidian index [--vault-dir <path>]`** — Walk **`--vault-dir`** (default `./data`) and report whether normalized titles are unique enough for correlation.
 - **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).

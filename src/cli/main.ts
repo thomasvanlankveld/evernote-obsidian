@@ -542,10 +542,15 @@ function parseRunArgs(
   const snap = snapshotParsed.snapshot;
   const corr = correlateParsed.correlate;
   const inputSnapshot = snap.inputSnapshotPath ?? corr.snapshotPath;
-  if (inputSnapshot === undefined && snap.dbPath === undefined) {
+  if (
+    inputSnapshot === undefined &&
+    snap.dbPath === undefined &&
+    corr.existingMapPath === undefined
+  ) {
     return {
       ok: false,
-      message: 'error: run requires --db <path> unless reusing an existing snapshot via --snapshot',
+      message:
+        'error: run requires --db <path> unless reusing an existing snapshot via --snapshot and/or --map',
     };
   }
 
@@ -571,7 +576,7 @@ function parseRunArgs(
 
 async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<number> {
   let snapshotPath = parsed.snapshotPath;
-  if (snapshotPath === undefined) {
+  if (snapshotPath === undefined && parsed.mapPath === undefined) {
     const code = await runSnapshot(
       {
         dbPath: parsed.dbPath as string,
@@ -871,7 +876,7 @@ function usage(): string {
     '',
     'Usage:',
     '  evernote-obsidian [--help|--version]',
-    '  evernote-obsidian run --vault-dir <path> --db <path> [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
+    '  evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '  evernote-obsidian index [--vault-dir <path>]',
     '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',
     '  evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]',
@@ -879,7 +884,7 @@ function usage(): string {
     '  evernote-obsidian rewrite --map <path> [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '',
     'Commands:',
-    '  run        Chain snapshot → correlate → rewrite (typical one-shot fix; use step commands to inspect intermediates).',
+    '  run        Chain snapshot → correlate → rewrite (typical one-shot fix; --db unless --snapshot/--map reuse intermediates).',
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
     '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
@@ -901,6 +906,8 @@ function usage(): string {
     '  --out                          Output path (snapshot default: ./out/evernote-notes.json; correlate: ./out/link-map.json; links: stdout unless set)',
     '  --max-notes                    Stop after N notes (optional cap; notes ordered by title)',
     '  --snapshot-out                 Snapshot JSON output for run (alias: --out when generating a snapshot)',
+    '',
+    '  run prints one JSON summary per step on stdout (pretty-printed). Scripts should parse brace-balanced objects or call step commands separately.',
     '  --map-out                      Link map output for run (default: ./out/link-map.json)',
     '',
     '  evernote-backup: https://github.com/vzhd1701/evernote-backup',
