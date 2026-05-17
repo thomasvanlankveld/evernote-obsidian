@@ -23,6 +23,7 @@ import {
 } from './pipelineStep.ts';
 import { type RewriteCliOk, runRewrite } from './rewriteCommand.ts';
 import { type RunOutputFlags, resolveRunOutput } from './runOutput.ts';
+import { resolveEvernoteSourceForRun, runPreflightAtStart } from './runPreflight.ts';
 import { emitRunReport, pipelineExitCode } from './runReport.ts';
 import { runSnapshot } from './snapshotCommand.ts';
 import { runUnescapeLinks } from './unescapeLinksCommand.ts';
@@ -197,17 +198,24 @@ export async function runRun(
   const cwd = options?.cwd ?? process.cwd();
   const resolvedOutput = resolveRunOutput(parsed.output, streams);
   const quietSteps = resolvedOutput.mode !== 'json-steps';
+
+  const steps: PipelineStepResult[] = [];
+
+  const preflightExit = await runPreflightAtStart(parsed, streams, cwd);
+  if (preflightExit !== null) {
+    return preflightExit;
+  }
+
   const invokeBase: StepInvokeContext = {
     cwd,
     quiet: quietSteps,
     interactive: resolvedOutput.mode === 'human',
     progress: resolvedOutput.progress,
+    skipVaultCorrelateContext: resolveEvernoteSourceForRun(parsed) !== null,
     onProgress: (line) => {
       streams.stderr.write(line);
     },
   };
-
-  const steps: PipelineStepResult[] = [];
 
   if (
     parsed.dbPath !== undefined &&

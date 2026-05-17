@@ -197,10 +197,11 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         { cwd: work },
       );
       assert.equal(runCode, 0, `run subcommand: ${runStreams.err()}`);
-      assert.match(runStreams.err(), /Vault: 2 markdown files/, 'run subcommand: vault context');
+      assert.match(runStreams.err(), /Preflight:/, 'run subcommand: preflight');
+      assert.match(runStreams.err(), /Vault:\s+2 markdown/, 'run subcommand: vault context');
       assert.match(
         runStreams.err(),
-        /Evernote: 1 note in snapshot/,
+        /Evernote:\s+1 note in Evernote DB/,
         'run subcommand: Evernote context',
       );
 
@@ -270,14 +271,11 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         { cwd: work },
       );
       assert.equal(runCode, 0, `run uppercase guid: ${runStreams.err()}`);
+      assert.match(runStreams.err(), /Preflight:/, 'run uppercase guid: preflight');
+      assert.match(runStreams.err(), /Vault:\s+2 markdown/, 'run uppercase guid: vault context');
       assert.match(
         runStreams.err(),
-        /Vault: 2 markdown files/,
-        'run uppercase guid: vault context',
-      );
-      assert.match(
-        runStreams.err(),
-        /Evernote: 1 note in snapshot/,
+        /Evernote:\s+1 note in Evernote DB/,
         'run uppercase guid: Evernote context',
       );
 
