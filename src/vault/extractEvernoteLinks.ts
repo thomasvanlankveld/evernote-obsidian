@@ -204,6 +204,136 @@ function maskRanges(content: string, ranges: readonly [number, number][]): strin
   return out;
 }
 
+function mergeMaskRanges(ranges: [number, number][]): [number, number][] {
+  if (ranges.length === 0) {
+    return [];
+  }
+  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [sorted[0] as [number, number]];
+  for (let i = 1; i < sorted.length; i++) {
+    const [start, end] = sorted[i] as [number, number];
+    const last = merged[merged.length - 1] as [number, number];
+    if (start <= last[1]) {
+      last[1] = Math.max(last[1], end);
+    } else {
+      merged.push([start, end]);
+    }
+  }
+  return merged;
+}
+
+function isOffsetInsideRanges(offset: number, ranges: readonly [number, number][]): boolean {
+  for (const [start, end] of ranges) {
+    if (offset >= start && offset < end) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Fenced ``` / ~~~ blocks (opening line through closing fence or EOF). */
+function collectFencedCodeBlockRanges(content: string): [number, number][] {
+  const ranges: [number, number][] = [];
+  let lineStart = 0;
+  while (lineStart < content.length) {
+    const lineEnd = content.indexOf('\n', lineStart);
+    const lineBreakEnd = lineEnd === -1 ? content.length : lineEnd + 1;
+    const line = content.slice(lineStart, lineEnd === -1 ? content.length : lineEnd);
+    const open = /^(\s*)(`{3,}|~{3,})(?:[^\n`]*)$/.exec(line);
+    if (open?.[2]) {
+      const fenceChar = open[2][0];
+      const fenceLen = open[2].length;
+      let search = lineBreakEnd;
+      let closed = false;
+      while (search < content.length) {
+        const closeLineStart = search;
+        const closeLineEnd = content.indexOf('\n', search);
+        const closeLineBreakEnd = closeLineEnd === -1 ? content.length : closeLineEnd + 1;
+        const closeLine = content.slice(
+          closeLineStart,
+          closeLineEnd === -1 ? content.length : closeLineEnd,
+        );
+        const close = /^(\s*)(`{3,}|~{3,})\s*$/.exec(closeLine);
+        if (close?.[2] && close[2][0] === fenceChar && close[2].length >= fenceLen) {
+          ranges.push([lineStart, closeLineBreakEnd]);
+          lineStart = closeLineBreakEnd;
+          closed = true;
+          break;
+        }
+        search = closeLineBreakEnd;
+      }
+      if (!closed) {
+        ranges.push([lineStart, content.length]);
+        return ranges;
+      }
+      continue;
+    }
+    lineStart = lineBreakEnd;
+  }
+  return ranges;
+}
+
+/** Inline `` `…` `` spans outside `excludeRanges` (e.g. fenced blocks). */
+function collectInlineCodeRanges(
+  content: string,
+  excludeRanges: readonly [number, number][],
+): [number, number][] {
+  const ranges: [number, number][] = [];
+  let i = 0;
+  while (i < content.length) {
+    if (isOffsetInsideRanges(i, excludeRanges)) {
+      i++;
+      continue;
+    }
+    if (content[i] !== '`') {
+      i++;
+      continue;
+    }
+    let tickStart = i;
+    while (tickStart < content.length && content[tickStart] === '`') {
+      tickStart++;
+    }
+    const tickCount = tickStart - i;
+    let k = tickStart;
+    let closed = false;
+    while (k < content.length) {
+      if (isOffsetInsideRanges(k, excludeRanges)) {
+        k++;
+        continue;
+      }
+      if (content[k] !== '`') {
+        k++;
+        continue;
+      }
+      let tickEnd = k;
+      while (tickEnd < content.length && content[tickEnd] === '`') {
+        tickEnd++;
+      }
+      if (tickEnd - k === tickCount) {
+        ranges.push([i, tickEnd]);
+        i = tickEnd;
+        closed = true;
+        break;
+      }
+      k = tickEnd;
+    }
+    if (!closed) {
+      i = tickStart;
+    }
+  }
+  return ranges;
+}
+
+/**
+ * Ranges of fenced and inline code to exclude from Evernote URL discovery
+ * (`links` report and `rewrite` both use {@link mergeEvernoteUrlSpans}).
+ */
+export function collectCodeVerbatimMaskRanges(content: string): [number, number][] {
+  const fenced = collectFencedCodeBlockRanges(content);
+  const inline = collectInlineCodeRanges(content, fenced);
+  return mergeMaskRanges([...fenced, ...inline]);
+}
+
 const AUTOLINK = /<((?:evernote:|https?:\/\/)[^>\s]+)>/gi;
 
 /** Inline `[text](url)` span (CommonMark-style: link text may contain `]` before `](`). */
@@ -284,9 +414,11 @@ const BARE_OTHER_EVERNOTE = /\bhttps?:\/\/[a-z0-9.-]*evernote\.com(?:\/[^\s)\]]*
  * Collect merged Evernote URL spans (same discovery rules as the `links` command).
  */
 export function mergeEvernoteUrlSpans(content: string): MergedEvernoteUrlSpan[] {
+  const codeMask = collectCodeVerbatimMaskRanges(content);
+  const scanContent = codeMask.length > 0 ? maskRanges(content, codeMask) : content;
   const spans: Span[] = [];
 
-  for (const link of scanMarkdownInlineLinks(content)) {
+  for (const link of scanMarkdownInlineLinks(scanContent)) {
     const cls = classifyEvernoteUrl(link.url);
     if (cls === null) {
       continue;
@@ -301,7 +433,7 @@ export function mergeEvernoteUrlSpans(content: string): MergedEvernoteUrlSpan[] 
     });
   }
 
-  for (const m of content.matchAll(WIKILINK)) {
+  for (const m of scanContent.matchAll(WIKILINK)) {
     const rawTarget = m[1];
     const target = rawTarget?.trim();
     if (!rawTarget || !target) {
@@ -326,7 +458,7 @@ export function mergeEvernoteUrlSpans(content: string): MergedEvernoteUrlSpan[] 
     });
   }
 
-  for (const m of content.matchAll(AUTOLINK)) {
+  for (const m of scanContent.matchAll(AUTOLINK)) {
     const url = m[1];
     const cls = url !== undefined ? classifyEvernoteUrl(url) : null;
     if (!url || cls === null) {
@@ -345,7 +477,7 @@ export function mergeEvernoteUrlSpans(content: string): MergedEvernoteUrlSpan[] 
   }
 
   const covered: [number, number][] = spans.map((s) => [s.urlStart, s.urlEnd]);
-  const masked = maskRanges(content, covered);
+  const masked = maskRanges(scanContent, covered);
 
   for (const m of masked.matchAll(BARE_NOTE)) {
     const url = m[1];

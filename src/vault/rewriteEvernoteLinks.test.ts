@@ -52,6 +52,22 @@ describe('rewriteMarkdownWithGuidMap', () => {
     assert.equal(replaced, 0);
     assert.equal(content, src);
   });
+
+  it('does not rewrite Evernote URLs inside code blocks', () => {
+    const guid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const map = new Map([[guid, 'target.md']]);
+    const src = [
+      '```',
+      `https://www.evernote.com/shard/s/n/${guid}/`,
+      '```',
+      '',
+      `https://www.evernote.com/shard/s/n/${guid}/`,
+    ].join('\n');
+    const { content, replaced } = rewriteMarkdownWithGuidMap(src, map);
+    assert.equal(replaced, 1);
+    assert.match(content, new RegExp(`\`\`\`[\\s\\S]*${guid}[\\s\\S]*\`\`\``));
+    assert.match(content, /\[\[target\.md\]\]/);
+  });
 });
 
 describe('escapeWikilinkAlias', () => {

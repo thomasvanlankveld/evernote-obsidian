@@ -75,6 +75,7 @@ Create the database with upstream’s **`evernote-backup init-db`** / **`sync`**
 
 - **Correlation keys:** `correlate` prefers vault frontmatter **`evernote-guid:`** (lowercase UUID scalar) when present, then falls back to **normalized title** (filename or frontmatter `title:`). Ambiguous duplicate GUIDs in the vault, GUID/title disagreements, or duplicate Evernote titles without resolvable GUIDs fail with a JSON report (no silent wrong links). Use **`byGuid` overrides** for intentional remapping.
 - **Link hosts:** `links` / `rewrite` target **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` for reporting). **Regional products** (e.g. Yinxiang / 印象笔记 on non-`evernote.com` domains) are **out of scope** unless URLs in your Markdown use the shapes above. evernote-backup can still sync Yinxiang metadata into the SQLite DB for `snapshot`.
+- **Code spans:** `links` and `rewrite` **ignore** Evernote URLs inside fenced code blocks (`` ``` `` / `~~~`) and inline code (`` `…` ``). Literals kept for documentation or examples are left unchanged; only URLs in normal prose or link syntax are reported and rewritten.
 - **Not a full YAML parser:** Frontmatter support is a line-based subset (`title:` and `evernote-guid:` scalars only). See the EDD for details.
 
 ## Evernote snapshot: limits

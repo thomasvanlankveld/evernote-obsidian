@@ -6,7 +6,9 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   classifyEvernoteUrl,
+  collectCodeVerbatimMaskRanges,
   extractEvernoteLinksFromMarkdown,
+  mergeEvernoteUrlSpans,
   scanMarkdownInlineLinks,
   scanVaultForEvernoteLinks,
   tryParseNoteGuidFromUrl,
@@ -115,6 +117,44 @@ describe('extractEvernoteLinksFromMarkdown', () => {
     assert.equal(links.length, 1);
     assert.equal(links[0]?.alias, 'Bracket] test');
     assert.equal(links[0]?.parsedGuid, guid);
+  });
+
+  it('skips bare Evernote URLs inside fenced code blocks', () => {
+    const guid = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const s = [
+      'Prose https://www.evernote.com/shard/s/n/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/',
+      '',
+      '```',
+      `evernote:///view/1/2/${guid}`,
+      '```',
+    ].join('\n');
+    const links = extractEvernoteLinksFromMarkdown(s, 'x.md');
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.parsedGuid, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  });
+
+  it('skips Evernote URLs inside inline code', () => {
+    const s =
+      'Use `evernote:///view/1/2/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb` and https://www.evernote.com/shard/s/n/cccccccc-cccc-cccc-cccc-cccccccccccc/';
+    const links = extractEvernoteLinksFromMarkdown(s, 'x.md');
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.parsedGuid, 'cccccccc-cccc-cccc-cccc-cccccccccccc');
+  });
+
+  it('skips markdown links inside fenced code blocks', () => {
+    const guid = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+    const s = ['```md', `[doc](https://www.evernote.com/shard/s/n/${guid}/)`, '```'].join('\n');
+    assert.equal(mergeEvernoteUrlSpans(s).length, 0);
+  });
+});
+
+describe('collectCodeVerbatimMaskRanges', () => {
+  it('masks fenced and inline code without overlapping prose', () => {
+    const s = 'a `b` c\n```\nd\n```\ne';
+    const ranges = collectCodeVerbatimMaskRanges(s);
+    assert.equal(ranges.length, 2);
+    assert.ok(ranges.some(([a, b]) => a === 2 && b === 5));
+    assert.ok(ranges.some(([a]) => a === 8));
   });
 });
 

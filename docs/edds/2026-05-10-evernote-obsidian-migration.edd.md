@@ -81,6 +81,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 ### Phase 4 — Link extraction
 
 - [x] Per `.md`, find **note** URLs: **`evernote://…`** and **`https://www.evernote.com/shard/…`**; normalize each to **GUID** for the link map. Other **`*.evernote.com`** hosts (e.g. blog): **do not rewrite** — report or skip per CLI.
+- [x] **Skip code spans:** fenced (`` ``` `` / `~~~`) and inline (`` `…` ``) regions are excluded from discovery so `rewrite --in-place` does not turn documentation literals into wikilinks; `links` uses the same rules.
 - [x] Capture **display text / alias** when the import left one (e.g. existing `[[alias]]`-style segments or markdown link text) so rewrites can use **`[[path|alias]]`** without changing what readers see.
 - [x] Emit **report only**: file, location, raw URL, parsed id, alias when possible.
 
