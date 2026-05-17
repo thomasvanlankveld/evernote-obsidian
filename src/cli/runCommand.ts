@@ -3,6 +3,7 @@ import type { MainStreams } from './cliTypes.ts';
 import { parseCorrelateArgs, runCorrelate } from './correlateCommand.ts';
 import { parseRewriteArgs, type RewriteCliOk, runRewrite } from './rewriteCommand.ts';
 import { parseSnapshotArgs, runSnapshot } from './snapshotCommand.ts';
+import { parseVaultRootFromArgs } from './vaultDirFlag.ts';
 
 export interface RunCliOk {
   vaultRoot: string;
@@ -32,7 +33,16 @@ export function parseRunArgs(
     return knownFlags;
   }
 
-  const runOpts = { permissive: true, subcommand: 'run' } as const;
+  const vaultParsed = parseVaultRootFromArgs(args, cwd);
+  if (!vaultParsed.ok) {
+    return vaultParsed;
+  }
+
+  const runOpts = {
+    permissive: true,
+    subcommand: 'run',
+    vaultRoot: vaultParsed.vaultRoot,
+  } as const;
   const snapshotParsed = parseSnapshotArgs(args, cwd, runOpts);
   if (!snapshotParsed.ok) {
     return snapshotParsed;
@@ -64,7 +74,7 @@ export function parseRunArgs(
   return {
     ok: true,
     run: {
-      vaultRoot: rewriteParsed.rewrite.vaultRoot,
+      vaultRoot: vaultParsed.vaultRoot,
       dbPath: snap.dbPath,
       snapshotPath: inputSnapshot,
       snapshotOutPath: snap.outPath,

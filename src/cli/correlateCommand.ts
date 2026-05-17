@@ -9,7 +9,7 @@ import { parseCorrelationOverridesJson } from '../correlation/overridesFile.ts';
 import { readSnapshotFile } from '../evernote/snapshotFile.ts';
 import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
 import { applyPathFlag, unknownSubcommandFlagError } from './cliFlags.ts';
-import type { MainStreams } from './cliTypes.ts';
+import type { MainStreams, SubcommandParseOptions } from './cliTypes.ts';
 import {
   applyVaultDirFlag,
   createVaultDirFlagState,
@@ -28,10 +28,11 @@ export interface CorrelateCliOk {
 export function parseCorrelateArgs(
   args: readonly string[],
   cwd: string,
-  options?: { permissive?: boolean | undefined; subcommand?: string | undefined },
+  options?: SubcommandParseOptions,
 ): { ok: true; correlate: CorrelateCliOk } | { ok: false; message: string } {
   const subcommand = options?.subcommand ?? 'correlate';
   const permissive = options?.permissive === true;
+  const resolvedVaultRoot = options?.vaultRoot;
   const defaultOut = resolve(cwd, 'out', 'link-map.json');
   let vaultState = createVaultDirFlagState();
   let snapshotPath: string | undefined;
@@ -49,7 +50,9 @@ export function parseCorrelateArgs(
       return { ok: false, message: vaultApplied.message };
     }
     if (vaultApplied.kind === 'handled') {
-      vaultState = vaultApplied.state;
+      if (resolvedVaultRoot === undefined) {
+        vaultState = vaultApplied.state;
+      }
       i = vaultApplied.nextIndex;
       continue;
     }
@@ -130,7 +133,7 @@ export function parseCorrelateArgs(
   return {
     ok: true,
     correlate: {
-      vaultRoot: resolveVaultRootFromState(vaultState, cwd),
+      vaultRoot: resolvedVaultRoot ?? resolveVaultRootFromState(vaultState, cwd),
       snapshotPath,
       overridesPath,
       outPath,
