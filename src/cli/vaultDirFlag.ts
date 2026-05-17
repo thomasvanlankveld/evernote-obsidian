@@ -64,3 +64,26 @@ export function resolveVaultRootFromState(state: VaultDirFlagState, cwd: string)
   const defaultData = resolve(cwd, 'data');
   return state.explicitPath ?? defaultData;
 }
+
+/** Resolve `--vault-dir` / `--vault` from argv (last flag wins). */
+export function parseVaultRootFromArgs(
+  args: readonly string[],
+  cwd: string,
+): { ok: true; vaultRoot: string } | { ok: false; message: string } {
+  let vaultState = createVaultDirFlagState();
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === undefined) {
+      continue;
+    }
+    const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
+    if (vaultApplied.kind === 'error') {
+      return { ok: false, message: vaultApplied.message };
+    }
+    if (vaultApplied.kind === 'handled') {
+      vaultState = vaultApplied.state;
+      i = vaultApplied.nextIndex;
+    }
+  }
+  return { ok: true, vaultRoot: resolveVaultRootFromState(vaultState, cwd) };
+}

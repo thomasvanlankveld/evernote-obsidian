@@ -10,7 +10,7 @@ import { atomicReplaceFile } from '../fs/atomicReplaceFile.ts';
 import { rewriteMarkdownWithGuidMap } from '../vault/rewriteEvernoteLinks.ts';
 import { VaultIndexRootError, walkVaultMarkdownFiles } from '../vault/vaultIndex.ts';
 import { applyPathFlag, parseRewriteOutputMode, unknownSubcommandFlagError } from './cliFlags.ts';
-import type { MainStreams } from './cliTypes.ts';
+import type { MainStreams, SubcommandParseOptions } from './cliTypes.ts';
 import {
   applyVaultDirFlag,
   createVaultDirFlagState,
@@ -28,10 +28,11 @@ export interface RewriteCliOk {
 export function parseRewriteArgs(
   args: readonly string[],
   cwd: string,
-  options?: { permissive?: boolean | undefined; subcommand?: string | undefined },
+  options?: SubcommandParseOptions,
 ): { ok: true; rewrite: RewriteCliOk } | { ok: false; message: string } {
   const subcommand = options?.subcommand ?? 'rewrite';
   const permissive = options?.permissive === true;
+  const resolvedVaultRoot = options?.vaultRoot;
   let vaultState = createVaultDirFlagState();
   let mapPath: string | undefined;
 
@@ -45,7 +46,9 @@ export function parseRewriteArgs(
       return { ok: false, message: vaultApplied.message };
     }
     if (vaultApplied.kind === 'handled') {
-      vaultState = vaultApplied.state;
+      if (resolvedVaultRoot === undefined) {
+        vaultState = vaultApplied.state;
+      }
       i = vaultApplied.nextIndex;
       continue;
     }
@@ -87,7 +90,7 @@ export function parseRewriteArgs(
   return {
     ok: true,
     rewrite: {
-      vaultRoot: resolveVaultRootFromState(vaultState, cwd),
+      vaultRoot: resolvedVaultRoot ?? resolveVaultRootFromState(vaultState, cwd),
       mapPath: mapPath ?? '',
       mode: modeParsed.mode,
       outDir: modeParsed.outDir,
