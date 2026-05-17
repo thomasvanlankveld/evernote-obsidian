@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  correlateSnapshotToGuidPaths,
+  vaultIndexResultToCorrelationInput,
+} from '../correlation/correlate.ts';
+import type { NoteRecord } from '../evernote/noteRecord.ts';
+import {
   buildVaultIndex,
   normalizeTitle,
   parseFrontmatterEvernoteGuid,
@@ -26,6 +31,22 @@ describe('normalizeTitle', () => {
 
   it('returns empty when the title is only whitespace', () => {
     assert.equal(normalizeTitle('   \t  '), '');
+  });
+
+  it('sanitizes Obsidian Importer filename characters before NFC and case fold', () => {
+    assert.equal(normalizeTitle('Coming Down to Earth: What if…'), 'coming down to earth what if…');
+    assert.equal(
+      normalizeTitle('Everybody Loves Zombies | Running The Game - YouTube'),
+      'everybody loves zombies running the game - youtube',
+    );
+    assert.equal(
+      normalizeTitle('Lydian & Mixolydian Scales / Modes'),
+      'lydian & mixolydian scales - modes',
+    );
+    assert.equal(
+      normalizeTitle('LMoPh: Leeuwenschild Koster (…)'),
+      'lmoph leeuwenschild koster (…)',
+    );
   });
 });
 
@@ -63,6 +84,54 @@ describe('parseFrontmatterEvernoteGuid', () => {
 });
 
 describe('buildVaultIndex', () => {
+  it('indexes Importer-sanitized filename stems for title correlation', async () => {
+    const root = join(here, '__fixtures__', 'importer-titles');
+    const r = await buildVaultIndex(root);
+    assert.equal(r.ok, true);
+    if (!r.ok) {
+      return;
+    }
+    assert.equal(
+      r.byNormalizedTitle.get('coming down to earth what if…'),
+      'Coming Down to Earth What if….md',
+    );
+    assert.equal(
+      r.byNormalizedTitle.get('lydian & mixolydian scales - modes'),
+      'Lydian & Mixolydian Scales - Modes.md',
+    );
+
+    const notes: NoteRecord[] = [
+      {
+        guid: 'g-colon',
+        title: 'Coming Down to Earth: What if…',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-slash',
+        title: 'Lydian & Mixolydian Scales / Modes',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+    ];
+    const pathToEvernoteGuid = new Map<string, string>();
+    for (const e of r.entries) {
+      if (e.evernoteGuid !== undefined) {
+        pathToEvernoteGuid.set(e.path, e.evernoteGuid);
+      }
+    }
+    const vault = vaultIndexResultToCorrelationInput(
+      r.byNormalizedTitle,
+      r.entries.map((e) => e.path),
+      r.byEvernoteGuid,
+      pathToEvernoteGuid,
+    );
+    const correlated = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(correlated.ok, true);
+    if (correlated.ok) {
+      assert.equal(correlated.guidToPath.get('g-colon'), 'Coming Down to Earth What if….md');
+      assert.equal(correlated.guidToPath.get('g-slash'), 'Lydian & Mixolydian Scales - Modes.md');
+    }
+  });
+
   it('indexes a vault with unique normalized titles', async () => {
     const root = join(here, '__fixtures__', 'unique');
     const r = await buildVaultIndex(root);

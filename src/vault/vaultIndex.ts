@@ -33,11 +33,35 @@ export type VaultIndexResult =
 
 const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.obsidian', '.trash']);
 
+/** Mirrors Obsidian Importer {@link https://github.com/obsidianmd/obsidian-importer/blob/master/src/util.ts | sanitizeFileName} path rules used for note filenames. */
+const IMPORTER_SLASHES_RE = /[/\\]/g;
+const IMPORTER_ILLEGAL_RE = /[?<>:*|"]/g;
+
+function isImporterControlChar(code: number): boolean {
+  return (code >= 0x00 && code <= 0x1f) || (code >= 0x80 && code <= 0x9f);
+}
+
 /**
- * Normalize a note title for correlation (v1: NFC, trim, lowercase, collapse whitespace).
+ * Apply Obsidian Importer filename sanitization to a title or stem before correlation.
+ * Slashes become `-`; `? < > : * | "` and control characters are removed.
+ */
+export function sanitizeObsidianImporterFileName(name: string): string {
+  const withoutControl = Array.from(name)
+    .filter((ch) => !isImporterControlChar(ch.codePointAt(0) ?? 0))
+    .join('');
+  return withoutControl.replace(IMPORTER_SLASHES_RE, '-').replace(IMPORTER_ILLEGAL_RE, '').trim();
+}
+
+/**
+ * Normalize a note title for correlation: Importer-style sanitization, then NFC, lowercase,
+ * and collapsed whitespace. Used for Evernote snapshot titles and vault filename stems.
  */
 export function normalizeTitle(raw: string): string {
-  const nfc = raw.trim().normalize('NFC').toLowerCase();
+  const sanitized = sanitizeObsidianImporterFileName(raw.trim());
+  if (sanitized === '') {
+    return '';
+  }
+  const nfc = sanitized.normalize('NFC').toLowerCase();
   return nfc.replace(/\s+/g, ' ');
 }
 

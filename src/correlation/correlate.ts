@@ -67,7 +67,7 @@ export function vaultIndexResultToCorrelationInput(
 
 /**
  * Join Evernote snapshot rows to vault paths: **GUID from vault frontmatter** when present,
- * else {@link normalizeTitle} on note titles, with optional per-GUID overrides.
+ * else {@link normalizeTitle} (Importer-aware) on note titles, with optional per-GUID overrides.
  */
 export function correlateSnapshotToGuidPaths(
   notes: readonly NoteRecord[],
