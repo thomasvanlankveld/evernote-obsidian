@@ -8,120 +8,55 @@ import { buildLinkMapFile } from '../correlation/linkMapFile.ts';
 import { parseCorrelationOverridesJson } from '../correlation/overridesFile.ts';
 import { readSnapshotFile } from '../evernote/snapshotFile.ts';
 import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
-import { applyPathFlag, unknownSubcommandFlagError } from './cliFlags.ts';
-import type { MainStreams, SubcommandParseOptions } from './cliTypes.ts';
-import {
-  advancePastVaultDirFlag,
-  applyVaultDirFlag,
-  createVaultDirFlagState,
-  resolveVaultRootFromState,
-} from './vaultDirFlag.ts';
+import { pathFlagHandler, scanArgv, vaultDirArgHandler } from './argvScan.ts';
+import type { MainStreams } from './cliTypes.ts';
+import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 export interface CorrelateCliOk {
   vaultRoot: string;
   snapshotPath?: string | undefined;
   overridesPath?: string | undefined;
   outPath: string;
-  /** Set by run when --map skips correlate; not used by standalone correlate. */
-  existingMapPath?: string | undefined;
 }
 
 export function parseCorrelateArgs(
   args: readonly string[],
   cwd: string,
-  options?: SubcommandParseOptions,
+  options?: { subcommand?: string | undefined },
 ): { ok: true; correlate: CorrelateCliOk } | { ok: false; message: string } {
   const subcommand = options?.subcommand ?? 'correlate';
-  const permissive = options?.permissive === true;
-  const resolvedVaultRoot = options?.vaultRoot;
   const defaultOut = resolve(cwd, 'out', 'link-map.json');
-  let vaultState = createVaultDirFlagState();
   let snapshotPath: string | undefined;
   let mapPath: string | undefined;
   let overridesPath: string | undefined;
   let outPath = defaultOut;
 
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === undefined) {
-      continue;
-    }
-    if (resolvedVaultRoot !== undefined) {
-      const vaultSkipped = advancePastVaultDirFlag(a, args, i);
-      if (vaultSkipped.kind === 'advanced') {
-        i = vaultSkipped.nextIndex;
-        continue;
-      }
-    } else {
-      const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
-      if (vaultApplied.kind === 'error') {
-        return { ok: false, message: vaultApplied.message };
-      }
-      if (vaultApplied.kind === 'handled') {
-        vaultState = vaultApplied.state;
-        i = vaultApplied.nextIndex;
-        continue;
-      }
-    }
-    const snapshotApplied = applyPathFlag(a, args, i, cwd, 'snapshot', './out/evernote-notes.json');
-    if (snapshotApplied.kind === 'error') {
-      return { ok: false, message: snapshotApplied.message };
-    }
-    if (snapshotApplied.kind === 'handled') {
-      snapshotPath = snapshotApplied.path;
-      i = snapshotApplied.nextIndex;
-      continue;
-    }
-    const mapApplied = applyPathFlag(a, args, i, cwd, 'map', './out/link-map.json');
-    if (mapApplied.kind === 'error') {
-      return { ok: false, message: mapApplied.message };
-    }
-    if (mapApplied.kind === 'handled') {
-      mapPath = mapApplied.path;
-      i = mapApplied.nextIndex;
-      continue;
-    }
-    const overridesApplied = applyPathFlag(
-      a,
-      args,
-      i,
-      cwd,
-      'overrides',
-      './out/correlation-overrides.json',
-    );
-    if (overridesApplied.kind === 'error') {
-      return { ok: false, message: overridesApplied.message };
-    }
-    if (overridesApplied.kind === 'handled') {
-      overridesPath = overridesApplied.path;
-      i = overridesApplied.nextIndex;
-      continue;
-    }
-    const outApplied = applyPathFlag(a, args, i, cwd, 'out', './out/link-map.json');
-    if (outApplied.kind === 'error') {
-      return { ok: false, message: outApplied.message };
-    }
-    if (outApplied.kind === 'handled') {
-      outPath = outApplied.path;
-      i = outApplied.nextIndex;
-      continue;
-    }
-    const mapOutApplied = applyPathFlag(a, args, i, cwd, 'map-out', './out/link-map.json');
-    if (mapOutApplied.kind === 'error') {
-      return { ok: false, message: mapOutApplied.message };
-    }
-    if (mapOutApplied.kind === 'handled') {
-      outPath = mapOutApplied.path;
-      i = mapOutApplied.nextIndex;
-      continue;
-    }
-    if (permissive) {
-      continue;
-    }
-    return { ok: false, message: unknownSubcommandFlagError(subcommand, a) };
+  const scanned = scanArgv(args, cwd, {
+    subcommand,
+    handlers: [
+      vaultDirArgHandler(),
+      pathFlagHandler('snapshot', './out/evernote-notes.json', (path) => {
+        snapshotPath = path;
+      }),
+      pathFlagHandler('map', './out/link-map.json', (path) => {
+        mapPath = path;
+      }),
+      pathFlagHandler('overrides', './out/correlation-overrides.json', (path) => {
+        overridesPath = path;
+      }),
+      pathFlagHandler('out', './out/link-map.json', (path) => {
+        outPath = path;
+      }),
+      pathFlagHandler('map-out', './out/link-map.json', (path) => {
+        outPath = path;
+      }),
+    ],
+  });
+  if (!scanned.ok) {
+    return scanned;
   }
 
-  if (!permissive && mapPath !== undefined) {
+  if (mapPath !== undefined) {
     return {
       ok: false,
       message:
@@ -129,7 +64,7 @@ export function parseCorrelateArgs(
     };
   }
 
-  if (!permissive && snapshotPath === undefined) {
+  if (snapshotPath === undefined) {
     return {
       ok: false,
       message:
@@ -140,11 +75,10 @@ export function parseCorrelateArgs(
   return {
     ok: true,
     correlate: {
-      vaultRoot: resolvedVaultRoot ?? resolveVaultRootFromState(vaultState, cwd),
+      vaultRoot: resolveVaultRootFromState(scanned.vaultState, cwd),
       snapshotPath,
       overridesPath,
       outPath,
-      existingMapPath: mapPath,
     },
   };
 }

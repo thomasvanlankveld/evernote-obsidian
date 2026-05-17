@@ -481,6 +481,8 @@ describe('cli main', () => {
       assert.equal(rewriteSummary.mode, 'dry-run');
       assert.equal(rewriteSummary.wroteFiles, false);
 
+      const snapStat = await stat(snapOut);
+      assert.ok(snapStat.isFile());
       const map = JSON.parse(await readFile(mapOut, 'utf8')) as {
         guidToPath: Record<string, string>;
       };
