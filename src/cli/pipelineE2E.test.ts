@@ -10,33 +10,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { Writable } from 'node:stream';
 import { describe, it } from 'node:test';
-import { type MainStreams, main } from './main.ts';
+import { makeStreams, parseJsonOutputs } from './cliTestHelpers.ts';
+import { main } from './main.ts';
 
 const TARGET_GUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-
-function makeStreams(): { streams: MainStreams; out: () => string; err: () => string } {
-  const outChunks: Buffer[] = [];
-  const errChunks: Buffer[] = [];
-  const stdout = new Writable({
-    write(chunk, _enc, cb) {
-      outChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      cb();
-    },
-  });
-  const stderr = new Writable({
-    write(chunk, _enc, cb) {
-      errChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      cb();
-    },
-  });
-  return {
-    streams: { stdout, stderr },
-    out: () => Buffer.concat(outChunks).toString('utf8'),
-    err: () => Buffer.concat(errChunks).toString('utf8'),
-  };
-}
 
 function createMinimalBackupDb(dbPath: string): void {
   const db = new DatabaseSync(dbPath);
@@ -73,29 +51,6 @@ async function seedPipelineVault(vaultRoot: string): Promise<void> {
     ].join('\n'),
     'utf8',
   );
-}
-
-/** Parse one or more pretty-printed JSON objects written to stdout. */
-function parseJsonOutputs(text: string): unknown[] {
-  const results: unknown[] = [];
-  let depth = 0;
-  let start = -1;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '{') {
-      if (depth === 0) {
-        start = i;
-      }
-      depth++;
-    } else if (ch === '}') {
-      depth--;
-      if (depth === 0 && start >= 0) {
-        results.push(JSON.parse(text.slice(start, i + 1)));
-        start = -1;
-      }
-    }
-  }
-  return results;
 }
 
 async function assertPipelineArtifacts(
