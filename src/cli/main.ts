@@ -19,6 +19,7 @@ import {
   readSnapshotFile,
   writeSnapshotFile,
 } from '../evernote/snapshotFile.ts';
+import { atomicReplaceFile } from '../fs/atomicReplaceFile.ts';
 import { scanVaultForEvernoteLinks } from '../vault/extractEvernoteLinks.ts';
 import { rewriteMarkdownWithGuidMap } from '../vault/rewriteEvernoteLinks.ts';
 import {
@@ -567,7 +568,7 @@ async function runRewrite(parsed: RewriteCliOk, streams: MainStreams): Promise<n
         const bak = `${abs}.evernote-obsidian.bak`;
         await writeFile(bak, content, 'utf8');
       }
-      await writeFile(abs, next, 'utf8');
+      await atomicReplaceFile(abs, next);
     }
 
     streams.stdout.write(
