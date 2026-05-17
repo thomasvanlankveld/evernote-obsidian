@@ -6,10 +6,15 @@ export interface RewriteMarkdownResult {
   skippedUnmapped: number;
 }
 
+/** Escape `|` in wikilink display text so Obsidian does not treat it as the path/alias delimiter. */
+export function escapeWikilinkAlias(alias: string): string {
+  return alias.includes('|') ? alias.replaceAll('|', '\\|') : alias;
+}
+
 function buildWikilink(targetPath: string, alias: string | null): string {
   const path = targetPath.trim();
   if (alias !== null && alias.length > 0) {
-    return `[[${path}|${alias}]]`;
+    return `[[${path}|${escapeWikilinkAlias(alias)}]]`;
   }
   return `[[${path}]]`;
 }

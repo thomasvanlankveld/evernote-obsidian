@@ -99,13 +99,17 @@ describe('buildVaultIndex', () => {
 });
 
 describe('buildVaultIndex temp dir', () => {
-  it('skips .git and node_modules when walking', async () => {
+  it('skips .git, node_modules, .obsidian, and .trash when walking', async () => {
     const root = join(here, '__fixtures__', 'temp-skip');
     await rm(root, { recursive: true, force: true });
     await mkdir(join(root, '.git'), { recursive: true });
     await mkdir(join(root, 'node_modules', 'pkg'), { recursive: true });
+    await mkdir(join(root, '.obsidian'), { recursive: true });
+    await mkdir(join(root, '.trash'), { recursive: true });
     await writeFile(join(root, '.git', 'tracked.md'), '# x\n', 'utf8');
     await writeFile(join(root, 'node_modules', 'pkg', 'readme.md'), '# x\n', 'utf8');
+    await writeFile(join(root, '.obsidian', 'note.md'), '# x\n', 'utf8');
+    await writeFile(join(root, '.trash', 'deleted.md'), '# x\n', 'utf8');
     await writeFile(join(root, 'visible.md'), '# Visible\n', 'utf8');
 
     try {
