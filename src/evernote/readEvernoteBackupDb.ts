@@ -57,22 +57,26 @@ export function readNoteRecordsFromEvernoteBackupDb(
     const countRow = db.prepare(`SELECT COUNT(*) as c FROM notes ${where}`).get() as { c: number };
     const sourceRowCount = Number(countRow.c);
 
-    const sql = ['SELECT guid, title FROM notes', where, 'ORDER BY title COLLATE NOCASE'].join(' ');
+    const sqlParts = [
+      'SELECT guid, title FROM notes',
+      where,
+      'ORDER BY title COLLATE NOCASE',
+    ];
+    if (opts?.maxRecords !== undefined) {
+      sqlParts.push('LIMIT ?');
+    }
+    const sql = sqlParts.join(' ');
 
     const stmt = db.prepare(sql);
-    const rows = stmt.all() as { guid: string; title: string }[];
+    const rows = (
+      opts?.maxRecords !== undefined ? stmt.all(opts.maxRecords) : stmt.all()
+    ) as { guid: string; title: string }[];
 
-    const out: NoteRecord[] = [];
-    for (const row of rows) {
-      out.push({
-        guid: normalizeEvernoteGuid(row.guid),
-        title: row.title,
-        updated: UPDATED_UNKNOWN,
-      });
-      if (opts?.maxRecords !== undefined && out.length >= opts.maxRecords) {
-        break;
-      }
-    }
+    const out: NoteRecord[] = rows.map((row) => ({
+      guid: normalizeEvernoteGuid(row.guid),
+      title: row.title,
+      updated: UPDATED_UNKNOWN,
+    }));
     return { records: out, sourceRowCount };
   } finally {
     db.close();
