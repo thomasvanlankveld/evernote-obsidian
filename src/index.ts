@@ -6,6 +6,7 @@ export type {
   CorrelateResult,
   DuplicateTargetPath,
   EvernoteTitleCollision,
+  GuidTitleMismatch,
   InvalidOverride,
   UnmatchedNote,
   VaultIndexForCorrelation,
@@ -52,11 +53,14 @@ export { rewriteMarkdownWithGuidMap } from './vault/rewriteEvernoteLinks.ts';
 export type {
   VaultIndexCollision,
   VaultIndexEntry,
+  VaultIndexGuidCollision,
   VaultIndexResult,
 } from './vault/vaultIndex.ts';
 export {
   buildVaultIndex,
+  EVERNOTE_GUID_FRONTMATTER_KEY,
   normalizeTitle,
+  parseFrontmatterEvernoteGuid,
   parseFrontmatterTitle,
   VaultIndexRootError,
   walkVaultMarkdownFiles,

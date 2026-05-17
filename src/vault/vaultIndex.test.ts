@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildVaultIndex,
   normalizeTitle,
+  parseFrontmatterEvernoteGuid,
   parseFrontmatterTitle,
   VaultIndexRootError,
 } from './vaultIndex.ts';
@@ -43,6 +44,24 @@ describe('parseFrontmatterTitle', () => {
   });
 });
 
+describe('parseFrontmatterEvernoteGuid', () => {
+  it('returns undefined when there is no frontmatter', () => {
+    assert.equal(parseFrontmatterEvernoteGuid('# Hi\n'), undefined);
+  });
+
+  it('reads evernote-guid and normalizes to lowercase', () => {
+    const body = '---\nevernote-guid: AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE\n---\n\n';
+    assert.equal(parseFrontmatterEvernoteGuid(body), 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  });
+
+  it('strips optional quotes', () => {
+    assert.equal(
+      parseFrontmatterEvernoteGuid("---\nevernote-guid: 'g1-g2-g3-g4-g5'\n---\n"),
+      'g1-g2-g3-g4-g5',
+    );
+  });
+});
+
 describe('buildVaultIndex', () => {
   it('indexes a vault with unique normalized titles', async () => {
     const root = join(here, '__fixtures__', 'unique');
@@ -54,6 +73,50 @@ describe('buildVaultIndex', () => {
     assert.equal(r.byNormalizedTitle.get('first'), 'first.md');
     assert.equal(r.byNormalizedTitle.get('second note'), 'sub/second note.md');
     assert.equal(r.byNormalizedTitle.get('quoted title'), 'third.md');
+  });
+
+  it('indexes evernote-guid from frontmatter', async () => {
+    const root = join(here, '__fixtures__', 'temp-guid-index');
+    await rm(root, { recursive: true, force: true });
+    await mkdir(root, { recursive: true });
+    await writeFile(
+      join(root, 'tagged.md'),
+      '---\ntitle: Renamed in vault\nevernote-guid: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n---\n\n',
+      'utf8',
+    );
+
+    try {
+      const r = await buildVaultIndex(root);
+      assert.equal(r.ok, true);
+      if (!r.ok) {
+        return;
+      }
+      assert.equal(r.byEvernoteGuid.get('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'), 'tagged.md');
+      assert.equal(r.entries[0]?.evernoteGuid, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails when two files claim the same evernote-guid', async () => {
+    const root = join(here, '__fixtures__', 'temp-guid-collision');
+    await rm(root, { recursive: true, force: true });
+    await mkdir(root, { recursive: true });
+    const guid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    await writeFile(join(root, 'a.md'), `---\nevernote-guid: ${guid}\n---\n\n`, 'utf8');
+    await writeFile(join(root, 'b.md'), `---\nevernote-guid: ${guid}\n---\n\n`, 'utf8');
+
+    try {
+      const r = await buildVaultIndex(root);
+      assert.equal(r.ok, false);
+      if (r.ok) {
+        return;
+      }
+      assert.equal(r.guidCollisions.length, 1);
+      assert.deepEqual(r.guidCollisions[0]?.paths.sort(), ['a.md', 'b.md']);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('fails with a sorted collision report when titles collide', async () => {

@@ -632,7 +632,16 @@ async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promi
     const index = await buildVaultIndex(parsed.vaultRoot);
     if (!index.ok) {
       streams.stderr.write(
-        `${JSON.stringify({ ok: false, reason: 'vault_index_collisions', collisions: index.collisions }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            ok: false,
+            reason: 'vault_index_collisions',
+            collisions: index.collisions,
+            guidCollisions: index.guidCollisions,
+          },
+          null,
+          2,
+        )}\n`,
       );
       return 1;
     }
@@ -644,9 +653,17 @@ async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promi
       overrides = parseCorrelationOverridesJson(raw);
     }
 
+    const pathToEvernoteGuid = new Map<string, string>();
+    for (const e of index.entries) {
+      if (e.evernoteGuid !== undefined) {
+        pathToEvernoteGuid.set(e.path, e.evernoteGuid);
+      }
+    }
     const vaultInput = vaultIndexResultToCorrelationInput(
       index.byNormalizedTitle,
       index.entries.map((e) => e.path),
+      index.byEvernoteGuid,
+      pathToEvernoteGuid,
     );
     const result = correlateSnapshotToGuidPaths(snapshot.notes, vaultInput, overrides);
     if (!result.ok) {
@@ -659,6 +676,7 @@ async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promi
             unmatched: result.unmatched,
             invalidOverrides: result.invalidOverrides,
             duplicateTargetPaths: result.duplicateTargetPaths,
+            guidTitleMismatches: result.guidTitleMismatches,
           },
           null,
           2,
@@ -859,7 +877,11 @@ async function runIndex(vaultRoot: string, streams: MainStreams): Promise<number
     const result = await buildVaultIndex(vaultRoot);
     if (!result.ok) {
       streams.stderr.write(
-        `${JSON.stringify({ ok: false, collisions: result.collisions }, null, 2)}\n`,
+        `${JSON.stringify(
+          { ok: false, collisions: result.collisions, guidCollisions: result.guidCollisions },
+          null,
+          2,
+        )}\n`,
       );
       return 1;
     }
@@ -896,7 +918,7 @@ function usage(): string {
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
     '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
-    '  correlate  Join snapshot GUIDs to vault paths by normalized title; optional overrides JSON.',
+    '  correlate  Join snapshot GUIDs to vault paths (evernote-guid frontmatter, else title); optional overrides JSON.',
     '  rewrite    Replace Evernote note URLs with Obsidian wikilinks using link-map.json from correlate.',
     '',
     'Options:',
