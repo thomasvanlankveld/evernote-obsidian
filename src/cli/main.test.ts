@@ -377,6 +377,20 @@ describe('cli main', () => {
     assert.match(err(), /unknown rewrite flag/);
   });
 
+  it('unescape-links is documented in usage', async () => {
+    const { streams, out } = makeStreams();
+    const code = await main(['--help'], streams);
+    assert.equal(code, 0);
+    assert.match(out(), /unescape-links/);
+  });
+
+  it('unescape-links exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['unescape-links', '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown unescape-links flag/);
+  });
+
   it('rewrite exits 2 when --dry-run is combined with --out-dir', async () => {
     const { streams, err } = makeStreams();
     const code = await main(
