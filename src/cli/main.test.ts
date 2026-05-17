@@ -224,7 +224,10 @@ describe('cli main', () => {
 
   it('fix-resources exits 2 on unknown flag', async () => {
     const { streams, err } = makeStreams();
-    const code = await main(['fix-resources', '--vault-dir', uniqueFixtureVault, '--nope'], streams);
+    const code = await main(
+      ['fix-resources', '--vault-dir', uniqueFixtureVault, '--nope'],
+      streams,
+    );
     assert.equal(code, 2);
     assert.match(err(), /unknown fix-resources flag/);
   });
