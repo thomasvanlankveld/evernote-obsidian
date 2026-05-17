@@ -405,6 +405,13 @@ describe('cli main', () => {
     assert.match(err(), /--vault-dir/);
   });
 
+  it('run exits 2 when --vault-dir has no path', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['run', '--vault-dir', '--db', '/tmp/x.db'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--vault-dir requires a path/);
+  });
+
   it('run exits 2 when --db, --snapshot, and --map are all missing', async () => {
     const { streams, err } = makeStreams();
     const code = await main(['run', '--vault-dir', uniqueFixtureVault], streams);

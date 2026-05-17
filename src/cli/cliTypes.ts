@@ -11,6 +11,6 @@ export interface MainOptions {
 export interface SubcommandParseOptions {
   permissive?: boolean | undefined;
   subcommand?: string | undefined;
-  /** Pre-resolved vault root (`run`); step parsers skip independent resolution. */
+  /** Pre-resolved vault root (`run`); step parsers skip vault-flag scans. */
   vaultRoot?: string | undefined;
 }
