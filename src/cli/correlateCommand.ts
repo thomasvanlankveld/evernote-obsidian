@@ -11,6 +11,7 @@ import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
 import { applyPathFlag, unknownSubcommandFlagError } from './cliFlags.ts';
 import type { MainStreams, SubcommandParseOptions } from './cliTypes.ts';
 import {
+  advancePastVaultDirFlag,
   applyVaultDirFlag,
   createVaultDirFlagState,
   resolveVaultRootFromState,
@@ -45,16 +46,22 @@ export function parseCorrelateArgs(
     if (a === undefined) {
       continue;
     }
-    const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
-    if (vaultApplied.kind === 'error') {
-      return { ok: false, message: vaultApplied.message };
-    }
-    if (vaultApplied.kind === 'handled') {
-      if (resolvedVaultRoot === undefined) {
-        vaultState = vaultApplied.state;
+    if (resolvedVaultRoot !== undefined) {
+      const vaultSkipped = advancePastVaultDirFlag(a, args, i);
+      if (vaultSkipped.kind === 'advanced') {
+        i = vaultSkipped.nextIndex;
+        continue;
       }
-      i = vaultApplied.nextIndex;
-      continue;
+    } else {
+      const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
+      if (vaultApplied.kind === 'error') {
+        return { ok: false, message: vaultApplied.message };
+      }
+      if (vaultApplied.kind === 'handled') {
+        vaultState = vaultApplied.state;
+        i = vaultApplied.nextIndex;
+        continue;
+      }
     }
     const snapshotApplied = applyPathFlag(a, args, i, cwd, 'snapshot', './out/evernote-notes.json');
     if (snapshotApplied.kind === 'error') {

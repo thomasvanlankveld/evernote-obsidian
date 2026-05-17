@@ -60,6 +60,25 @@ export function applyVaultDirFlag(
   return { kind: 'not-vault-flag' };
 }
 
+export type AdvancePastVaultDirFlagResult =
+  | { kind: 'advanced'; nextIndex: number }
+  | { kind: 'not-vault-flag' };
+
+/** Skip vault flag tokens without resolving (vault root already set by `parseRunArgs`). */
+export function advancePastVaultDirFlag(
+  arg: string,
+  _args: readonly string[],
+  index: number,
+): AdvancePastVaultDirFlagResult {
+  if (arg === '--vault-dir' || arg === '--vault') {
+    return { kind: 'advanced', nextIndex: index + 1 };
+  }
+  if (arg.startsWith('--vault-dir=') || arg.startsWith('--vault=')) {
+    return { kind: 'advanced', nextIndex: index };
+  }
+  return { kind: 'not-vault-flag' };
+}
+
 export function resolveVaultRootFromState(state: VaultDirFlagState, cwd: string): string {
   const defaultData = resolve(cwd, 'data');
   return state.explicitPath ?? defaultData;
