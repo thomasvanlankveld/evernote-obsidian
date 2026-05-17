@@ -18,6 +18,3 @@ node_modules/
 # Build / tool output (add paths here as the project grows)
 /dist/
 /out/
-
-# Linked git worktrees (see root AGENTS.md)
-.worktrees/
