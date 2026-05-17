@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { normalizeEvernoteGuid } from '../evernote/noteRecord.ts';
 
 /**
@@ -21,6 +22,39 @@ export class LinkMapParseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'LinkMapParseError';
+  }
+}
+
+/** Thrown when link-map `vaultRoot` does not match the vault passed to `rewrite`. */
+export class LinkMapVaultRootMismatchError extends Error {
+  readonly mapVaultRoot: string;
+  readonly cliVaultRoot: string;
+
+  constructor(mapVaultRoot: string, cliVaultRoot: string) {
+    super(
+      `link map vaultRoot (${mapVaultRoot}) does not match --vault (${cliVaultRoot}); re-run correlate with this vault or fix --vault`,
+    );
+    this.name = 'LinkMapVaultRootMismatchError';
+    this.mapVaultRoot = mapVaultRoot;
+    this.cliVaultRoot = cliVaultRoot;
+  }
+}
+
+/**
+ * Ensure the link map was built for the same vault as `rewrite --vault-dir`.
+ * Compares normalized absolute paths via `resolve()`.
+ */
+export function assertLinkMapVaultRootMatches(
+  linkMap: Pick<LinkMapFile, 'vaultRoot'>,
+  cliVaultRoot: string,
+): void {
+  if (linkMap.vaultRoot === '') {
+    throw new LinkMapParseError('link map is missing vaultRoot');
+  }
+  const mapRoot = resolve(linkMap.vaultRoot);
+  const cliRoot = resolve(cliVaultRoot);
+  if (mapRoot !== cliRoot) {
+    throw new LinkMapVaultRootMismatchError(mapRoot, cliRoot);
   }
 }
 

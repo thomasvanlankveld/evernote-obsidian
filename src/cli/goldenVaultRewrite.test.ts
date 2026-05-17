@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { constants } from 'node:fs';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -38,10 +38,14 @@ describe('golden miniature vault (rewrite --out-dir)', () => {
     const expectedLinking = await readFile(join(goldenMini, 'expected', 'linking.md'), 'utf8');
     const tmp = await mkdtemp(join(tmpdir(), 'eo-golden-rewrite-'));
     const outVault = join(tmp, 'out');
+    const mapForVault = JSON.parse(await readFile(mapPath, 'utf8')) as { vaultRoot: string };
+    mapForVault.vaultRoot = vaultRoot;
+    const resolvedMapPath = join(tmp, 'link-map.json');
+    await writeFile(resolvedMapPath, `${JSON.stringify(mapForVault, null, 2)}\n`, 'utf8');
     try {
       const { streams, out, err } = makeStreams();
       const code = await main(
-        ['rewrite', '--vault-dir', vaultRoot, '--map', mapPath, '--out-dir', outVault],
+        ['rewrite', '--vault-dir', vaultRoot, '--map', resolvedMapPath, '--out-dir', outVault],
         streams,
         { cwd: tmp },
       );

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -697,6 +697,65 @@ describe('cli main', () => {
       assert.equal(summary.wroteFiles, true);
       const mixed = await readFile(join(outVault, 'mixed.md'), 'utf8');
       assert.match(mixed, /\[\[other\.md\|My note alias\]\]/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rewrite exits 2 when link map vaultRoot does not match --vault-dir', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-rewrite-vault-mismatch-'));
+    const mapPath = join(dir, 'link-map.json');
+    const outVault = join(dir, 'out-vault');
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: linksFixtureDir,
+      snapshotPath: '/x',
+      guidToPath: {
+        'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee': 'other.md',
+      },
+    };
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    const mixedPath = join(linksFixtureDir, 'mixed.md');
+    const before = await readFile(mixedPath, 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        [
+          'rewrite',
+          '--vault-dir',
+          uniqueFixtureVault,
+          '--map',
+          mapPath,
+          '--dry-run',
+        ],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 2);
+      assert.equal(out(), '');
+      assert.match(err(), /vaultRoot/);
+      assert.match(err(), /re-run correlate/);
+      assert.match(err(), new RegExp(resolve(linksFixtureDir)));
+      assert.match(err(), new RegExp(resolve(uniqueFixtureVault)));
+      const after = await readFile(mixedPath, 'utf8');
+      assert.equal(after, before);
+
+      const outCode = await main(
+        [
+          'rewrite',
+          '--vault-dir',
+          uniqueFixtureVault,
+          '--map',
+          mapPath,
+          '--out-dir',
+          outVault,
+        ],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(outCode, 2);
+      await assert.rejects(stat(outVault));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
