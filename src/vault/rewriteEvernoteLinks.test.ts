@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { rewriteMarkdownWithGuidMap } from './rewriteEvernoteLinks.ts';
+import { escapeWikilinkAlias, rewriteMarkdownWithGuidMap } from './rewriteEvernoteLinks.ts';
 
 describe('rewriteMarkdownWithGuidMap', () => {
   it('rewrites markdown link with alias', () => {
@@ -27,11 +27,30 @@ describe('rewriteMarkdownWithGuidMap', () => {
     assert.match(content, /00000000-0000-0000-0000-000000000000/);
   });
 
+  it('escapes pipe characters in markdown link alias', () => {
+    const map = new Map([['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 'note.md']]);
+    const src =
+      '[See also | appendix](https://www.evernote.com/shard/s308/n/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/x)';
+    const { content, replaced } = rewriteMarkdownWithGuidMap(src, map);
+    assert.equal(replaced, 1);
+    assert.equal(content, '[[note.md|See also \\| appendix]]');
+  });
+
   it('does not rewrite other-evernote hosts', () => {
     const map = new Map<string, string>();
     const src = 'https://blog.evernote.com/hello/';
     const { content, replaced } = rewriteMarkdownWithGuidMap(src, map);
     assert.equal(replaced, 0);
     assert.equal(content, src);
+  });
+});
+
+describe('escapeWikilinkAlias', () => {
+  it('leaves aliases without pipes unchanged', () => {
+    assert.equal(escapeWikilinkAlias('Label'), 'Label');
+  });
+
+  it('backslash-escapes each pipe', () => {
+    assert.equal(escapeWikilinkAlias('a|b|c'), 'a\\|b\\|c');
   });
 });
