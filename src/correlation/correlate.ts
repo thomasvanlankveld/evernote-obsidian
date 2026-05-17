@@ -124,22 +124,24 @@ export function correlateSnapshotToGuidPaths(
   for (const [, group] of titleBuckets) {
     const titleOnlyPending = group.filter(needsTitleOnlyResolution);
     if (titleOnlyPending.length > 1) {
-      const head = group[0];
+      const head = titleOnlyPending[0];
       if (head === undefined) {
         continue;
       }
       evernoteTitleCollisions.push({
         normalizedTitle: normalizeTitle(head.title),
-        guids: group.map((n) => normalizeEvernoteGuid(n.guid)).sort(),
+        guids: titleOnlyPending.map((n) => normalizeEvernoteGuid(n.guid)).sort(),
       });
     }
   }
+
+  const blockedTitleCollisionGuids = new Set(evernoteTitleCollisions.flatMap((c) => c.guids));
 
   for (const n of notes) {
     const guid = normalizeEvernoteGuid(n.guid);
     const nt = normalizeTitle(n.title);
 
-    if (evernoteTitleCollisions.some((c) => c.guids.includes(guid))) {
+    if (blockedTitleCollisionGuids.has(guid)) {
       continue;
     }
 

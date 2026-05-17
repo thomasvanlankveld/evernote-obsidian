@@ -216,6 +216,29 @@ describe('correlateSnapshotToGuidPaths', () => {
     }
   });
 
+  it('still maps GUID-resolved notes when duplicate titles need title-only resolution', () => {
+    const vault = vaultIndexResultToCorrelationInput(
+      new Map([
+        ['note a', 'a.md'],
+        ['same', 'ambiguous.md'],
+      ]),
+      ['a.md', 'ambiguous.md'],
+      new Map([['guid-a', 'a.md']]),
+      new Map([['a.md', 'guid-a']]),
+    );
+    const notes: NoteRecord[] = [
+      { guid: 'guid-a', title: 'Same', updated: '1970-01-01T00:00:00.000Z' },
+      { guid: 'guid-b', title: 'same', updated: '1970-01-01T00:00:00.000Z' },
+      { guid: 'guid-c', title: 'SAME', updated: '1970-01-01T00:00:00.000Z' },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.evernoteTitleCollisions.length, 1);
+      assert.deepEqual(r.evernoteTitleCollisions[0]?.guids.sort(), ['guid-b', 'guid-c']);
+    }
+  });
+
   it('resolves duplicate Evernote titles when vault files have distinct evernote-guids', () => {
     const vault = vaultIndexResultToCorrelationInput(
       new Map([
