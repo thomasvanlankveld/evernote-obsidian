@@ -13,6 +13,29 @@ const uniqueFixtureVault = join(cliDir, '../vault/__fixtures__/unique');
 const collisionFixtureVault = join(cliDir, '../vault/__fixtures__/collision');
 const linksFixtureDir = join(cliDir, '../vault/__fixtures__/links');
 
+/** Parse one or more pretty-printed JSON objects written to stdout. */
+function parseJsonOutputs(text: string): unknown[] {
+  const results: unknown[] = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '{') {
+      if (depth === 0) {
+        start = i;
+      }
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        results.push(JSON.parse(text.slice(start, i + 1)));
+        start = -1;
+      }
+    }
+  }
+  return results;
+}
+
 function makeStreams(): { streams: MainStreams; out: () => string; err: () => string } {
   const outChunks: Buffer[] = [];
   const errChunks: Buffer[] = [];
@@ -404,6 +427,320 @@ describe('cli main', () => {
       assert.equal(summary.mode, 'in-place');
       assert.equal(summary.wroteFiles, true);
       const mixed = await readFile(join(vaultDir, 'mixed.md'), 'utf8');
+      assert.match(mixed, /\[\[other\.md\|My note alias\]\]/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run exits 2 when --vault-dir is missing', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['run', '--db', '/tmp/x.db'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--vault-dir/);
+  });
+
+  it('run exits 2 when --db, --snapshot, and --map are all missing', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['run', '--vault-dir', uniqueFixtureVault], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--db/);
+    assert.match(err(), /--map/);
+  });
+
+  it('run exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(
+      ['run', '--vault-dir', uniqueFixtureVault, '--db', '/tmp/x.db', '--nope'],
+      streams,
+    );
+    assert.equal(code, 2);
+    assert.match(err(), /unknown run flag/);
+  });
+
+  it('run chains snapshot, correlate, and rewrite (dry-run)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-cli-'));
+    const dbPath = join(dir, 'en.db');
+    const snapOut = join(dir, 'evernote-notes.json');
+    const mapOut = join(dir, 'link-map.json');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE notes(
+        guid TEXT PRIMARY KEY,
+        title TEXT,
+        notebook_guid TEXT,
+        is_active BOOLEAN,
+        raw_note BLOB
+      );
+      INSERT INTO notes(guid, title, is_active) VALUES ('g1', 'First', 1);
+      INSERT INTO notes(guid, title, is_active) VALUES ('g2', 'Second Note', 1);
+      INSERT INTO notes(guid, title, is_active) VALUES ('g3', 'Quoted Title', 1);
+    `);
+    db.close();
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        [
+          'run',
+          '--vault-dir',
+          uniqueFixtureVault,
+          '--db',
+          dbPath,
+          '--out',
+          snapOut,
+          '--map-out',
+          mapOut,
+        ],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+
+      const summaries = parseJsonOutputs(out());
+      assert.equal(summaries.length, 3);
+      const snapSummary = summaries[0] as { ok: boolean; count: number };
+      const corrSummary = summaries[1] as { ok: boolean; count: number };
+      const rewriteSummary = summaries[2] as { mode: string; wroteFiles: boolean };
+      assert.equal(snapSummary.ok, true);
+      assert.equal(snapSummary.count, 3);
+      assert.equal(corrSummary.ok, true);
+      assert.equal(corrSummary.count, 3);
+      assert.equal(rewriteSummary.mode, 'dry-run');
+      assert.equal(rewriteSummary.wroteFiles, false);
+
+      const map = JSON.parse(await readFile(mapOut, 'utf8')) as {
+        guidToPath: Record<string, string>;
+      };
+      assert.equal(map.guidToPath.g1, 'first.md');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run skips snapshot when --snapshot is provided', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-skip-snap-'));
+    const snapPath = join(dir, 'evernote-notes.json');
+    const mapOut = join(dir, 'link-map.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [{ guid: 'g1', title: 'First', updated: '1970-01-01T00:00:00.000Z' }],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['run', '--vault-dir', uniqueFixtureVault, '--snapshot', snapPath, '--map-out', mapOut],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summaries = parseJsonOutputs(out());
+      assert.equal(summaries.length, 2);
+      const corrSummary = summaries[0] as { ok: boolean };
+      assert.equal(corrSummary.ok, true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run skips correlate when --map is provided', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-skip-corr-'));
+    const mapPath = join(dir, 'link-map.json');
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: linksFixtureDir,
+      snapshotPath: '/x',
+      guidToPath: {
+        'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee': 'other.md',
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': 'b.md',
+        'cccccccc-cccc-cccc-cccc-cccccccccccc': 'c.md',
+      },
+    };
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(['run', '--vault-dir', linksFixtureDir, '--map', mapPath], streams, {
+        cwd: dir,
+      });
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summaries = parseJsonOutputs(out());
+      assert.equal(summaries.length, 1);
+      const rewriteSummary = summaries[0] as {
+        mode: string;
+        replacements: number;
+        filesChanged: number;
+      };
+      assert.equal(rewriteSummary.mode, 'dry-run');
+      assert.ok(rewriteSummary.replacements >= 3);
+      assert.ok(rewriteSummary.filesChanged >= 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run skips snapshot and correlate when --snapshot and --map are provided', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-skip-both-'));
+    const snapPath = join(dir, 'evernote-notes.json');
+    const mapPath = join(dir, 'link-map.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [{ guid: 'g1', title: 'First', updated: '1970-01-01T00:00:00.000Z' }],
+    };
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: uniqueFixtureVault,
+      snapshotPath: snapPath,
+      guidToPath: { g1: 'first.md' },
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['run', '--vault-dir', uniqueFixtureVault, '--snapshot', snapPath, '--map', mapPath],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summaries = parseJsonOutputs(out());
+      assert.equal(summaries.length, 1);
+      assert.equal((summaries[0] as { mode: string }).mode, 'dry-run');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run exits 2 when snapshot step fails (missing db file)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-bad-db-'));
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['run', '--vault-dir', uniqueFixtureVault, '--db', join(dir, 'missing.db')],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 2);
+      assert.equal(out(), '');
+      assert.match(err(), /^snapshot:/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run exits 1 when correlate finds unmatched snapshot titles', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-unmatched-'));
+    const dbPath = join(dir, 'en.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE notes(
+        guid TEXT PRIMARY KEY,
+        title TEXT,
+        notebook_guid TEXT,
+        is_active BOOLEAN,
+        raw_note BLOB
+      );
+      INSERT INTO notes(guid, title, is_active) VALUES ('gx', 'Nope Nope', 1);
+    `);
+    db.close();
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(['run', '--vault-dir', uniqueFixtureVault, '--db', dbPath], streams, {
+        cwd: dir,
+      });
+      assert.equal(code, 1);
+      const summaries = parseJsonOutputs(out());
+      assert.equal(summaries.length, 1);
+      const j = JSON.parse(err()) as { ok: boolean; reason: string };
+      assert.equal(j.ok, false);
+      assert.equal(j.reason, 'correlation_failed');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run exits 1 when vault has title collisions (correlate step)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-collision-'));
+    const dbPath = join(dir, 'en.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE notes(
+        guid TEXT PRIMARY KEY,
+        title TEXT,
+        notebook_guid TEXT,
+        is_active BOOLEAN,
+        raw_note BLOB
+      );
+      INSERT INTO notes(guid, title, is_active) VALUES ('g1', 'Shared', 1);
+    `);
+    db.close();
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['run', '--vault-dir', collisionFixtureVault, '--db', dbPath],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 1);
+      const summaries = parseJsonOutputs(out());
+      assert.equal(summaries.length, 1);
+      const j = JSON.parse(err()) as { ok: boolean; reason: string };
+      assert.equal(j.ok, false);
+      assert.equal(j.reason, 'vault_index_collisions');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run --help documents run in usage', async () => {
+    const { streams, out } = makeStreams();
+    const code = await main([], streams);
+    assert.equal(code, 0);
+    assert.match(out(), /\brun\b/);
+    assert.match(out(), /snapshot → correlate → rewrite/);
+    assert.match(out(), /\[--db <path>\]/);
+  });
+
+  it('run --out-dir writes mirrored markdown when --map is provided', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-out-dir-'));
+    const mapPath = join(dir, 'link-map.json');
+    const outVault = join(dir, 'out-vault');
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: linksFixtureDir,
+      snapshotPath: '/x',
+      guidToPath: {
+        'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee': 'other.md',
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': 'b.md',
+        'cccccccc-cccc-cccc-cccc-cccccccccccc': 'c.md',
+      },
+    };
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['run', '--vault-dir', linksFixtureDir, '--map', mapPath, '--out-dir', outVault],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summaries = parseJsonOutputs(out());
+      assert.equal(summaries.length, 1);
+      const summary = summaries[0] as { mode: string; wroteFiles: boolean };
+      assert.equal(summary.mode, 'out-dir');
+      assert.equal(summary.wroteFiles, true);
+      const mixed = await readFile(join(outVault, 'mixed.md'), 'utf8');
       assert.match(mixed, /\[\[other\.md\|My note alias\]\]/);
     } finally {
       await rm(dir, { recursive: true, force: true });

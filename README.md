@@ -17,7 +17,7 @@ This CLI uses **metadata from a local Evernote backup** ([evernote-backup](https
 
 ### What to pass as `--vault-dir`
 
-`index`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. **`--vault`** is an equivalent alias.
+`run`, `index`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. **`--vault`** is an equivalent alias.
 
 You can point at:
 
@@ -26,9 +26,27 @@ You can point at:
 
 You do **not** need a `.obsidian` config folder or the rest of the vault—only the Markdown tree you want to analyze or rewrite.
 
+## Quick start
+
+After `npm install` and `npm run build`, point at your importer output and evernote-backup database:
+
+```bash
+# Preview changes (writes ./out/evernote-notes.json and ./out/link-map.json)
+evernote-obsidian run --vault-dir /path/to/imported-notes --db /path/to/en_backup.db
+
+# Write a mirrored vault with fixed links
+evernote-obsidian run --vault-dir /path/to/imported-notes --db /path/to/en_backup.db --out-dir ./out/rewritten-vault
+```
+
+`run` chains **snapshot → correlate → rewrite**. Use **`--dry-run`** explicitly if you like (it is the default when neither **`--out-dir`** nor **`--in-place`** is set). Re-run with **`--snapshot`** and/or **`--map`** to skip steps when intermediate files already exist (map-only runs rewrite only).
+
+Each step prints a JSON summary on stdout (pretty-printed). For scripting, parse brace-balanced JSON objects or use the step commands separately.
+
 ## Workflow
 
-Typical order (each step is a separate CLI invocation; see [#30](https://github.com/thomasvanlankveld/evernote-obsidian/issues/30) for a possible single `run` command later):
+**Typical:** one **`run`** invocation (above).
+
+**Step-by-step** (inspect or rerun individual artifacts):
 
 1. **`snapshot`** — read GUID + title from evernote-backup → `evernote-notes.json`
 2. **`correlate`** — match snapshot rows to vault files → `link-map.json`
@@ -36,14 +54,14 @@ Typical order (each step is a separate CLI invocation; see [#30](https://github.
 
 Optional: **`index`** (preflight title uniqueness), **`links`** (report remaining Evernote URLs without writing).
 
-## Commands (implemented so far)
+## Commands
 
-After `npm install` and `npm run build`, the **`evernote-obsidian`** CLI is available (the npm package name matches the tool; see `package.json` `bin`).
+- **`evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Run the full pipeline. Requires explicit **`--vault-dir`** (or **`--vault`**). **`--db`** is required on a fresh run; omit it when reusing **`--snapshot`** and/or **`--map`**. **`--out`** sets the snapshot JSON path when generating a snapshot (default `./out/evernote-notes.json`); **`--map-out`** sets the link map path (default `./out/link-map.json`). Pass **`--snapshot`** / **`--map`** to skip those steps.
 
 - **`evernote-obsidian index [--vault-dir <path>]`** — Walk **`--vault-dir`** (default `./data`) and report whether normalized titles are unique enough for correlation.
 - **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).
 
-- **`evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>]`** — Join snapshot rows to Markdown under **`--vault-dir`** using the same **normalized title** rules as `index`, and write **`./out/link-map.json`** by default (GUID → path relative to **`--vault-dir`**). Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping.
+- **`evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>] [--map-out <path>]`** — Join snapshot rows to Markdown under **`--vault-dir`** using the same **normalized title** rules as `index`, and write **`./out/link-map.json`** by default (GUID → path relative to **`--vault-dir`**). **`--map-out`** is an alias for **`--out`**. Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping.
 
 - **`evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]`** — Scan Markdown under **`--vault-dir`** for **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` links for reporting). Default is JSON on stdout; **`--out`** writes a report file.
 

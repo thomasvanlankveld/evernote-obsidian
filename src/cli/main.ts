@@ -27,7 +27,14 @@ import {
   VaultIndexRootError,
   walkVaultMarkdownFiles,
 } from '../vault/vaultIndex.ts';
-import { applyPathFlag, applyPositiveIntFlag, unknownSubcommandFlagError } from './cliFlags.ts';
+import {
+  applyPathFlag,
+  applyPositiveIntFlag,
+  assertKnownRunFlags,
+  hasExplicitVaultArg,
+  parseRewriteOutputMode,
+  unknownSubcommandFlagError,
+} from './cliFlags.ts';
 import { readCliPackageVersion } from './packageVersion.ts';
 import {
   applyVaultDirFlag,
@@ -110,6 +117,15 @@ export async function main(
     return runRewrite(parsed.rewrite, streams);
   }
 
+  if (cmd === 'run') {
+    const parsed = parseRunArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runRun(parsed.run, streams);
+  }
+
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);
   return 2;
 }
@@ -139,8 +155,10 @@ function parseVaultRootForIndex(
 }
 
 interface SnapshotCliOk {
-  dbPath: string;
+  dbPath?: string | undefined;
   outPath: string;
+  /** Reuse an existing snapshot file instead of reading --db. */
+  inputSnapshotPath?: string | undefined;
   /** When set, stop after this many notes (ordered by title). */
   maxRecords?: number | undefined;
 }
@@ -148,10 +166,14 @@ interface SnapshotCliOk {
 function parseSnapshotArgs(
   args: readonly string[],
   cwd: string,
+  options?: { permissive?: boolean | undefined; subcommand?: string | undefined },
 ): { ok: true; snapshot: SnapshotCliOk } | { ok: false; message: string } {
+  const subcommand = options?.subcommand ?? 'snapshot';
+  const permissive = options?.permissive === true;
   const defaultOut = resolve(cwd, 'out', 'evernote-notes.json');
   let outPath = defaultOut;
   let dbPath: string | undefined;
+  let inputSnapshotPath: string | undefined;
   let maxRecords: number | undefined;
 
   for (let i = 0; i < args.length; i++) {
@@ -168,6 +190,15 @@ function parseSnapshotArgs(
       i = dbApplied.nextIndex;
       continue;
     }
+    const snapshotApplied = applyPathFlag(a, args, i, cwd, 'snapshot', './out/evernote-notes.json');
+    if (snapshotApplied.kind === 'error') {
+      return { ok: false, message: snapshotApplied.message };
+    }
+    if (snapshotApplied.kind === 'handled') {
+      inputSnapshotPath = snapshotApplied.path;
+      i = snapshotApplied.nextIndex;
+      continue;
+    }
     const outApplied = applyPathFlag(a, args, i, cwd, 'out', './out/evernote-notes.json');
     if (outApplied.kind === 'error') {
       return { ok: false, message: outApplied.message };
@@ -175,6 +206,22 @@ function parseSnapshotArgs(
     if (outApplied.kind === 'handled') {
       outPath = outApplied.path;
       i = outApplied.nextIndex;
+      continue;
+    }
+    const snapshotOutApplied = applyPathFlag(
+      a,
+      args,
+      i,
+      cwd,
+      'snapshot-out',
+      './out/evernote-notes.json',
+    );
+    if (snapshotOutApplied.kind === 'error') {
+      return { ok: false, message: snapshotOutApplied.message };
+    }
+    if (snapshotOutApplied.kind === 'handled') {
+      outPath = snapshotOutApplied.path;
+      i = snapshotOutApplied.nextIndex;
       continue;
     }
     const maxApplied = applyPositiveIntFlag(a, args, i, 'max-notes');
@@ -186,10 +233,13 @@ function parseSnapshotArgs(
       i = maxApplied.nextIndex;
       continue;
     }
-    return { ok: false, message: unknownSubcommandFlagError('snapshot', a) };
+    if (permissive) {
+      continue;
+    }
+    return { ok: false, message: unknownSubcommandFlagError(subcommand, a) };
   }
 
-  if (dbPath === undefined) {
+  if (!permissive && dbPath === undefined) {
     return {
       ok: false,
       message:
@@ -197,7 +247,7 @@ function parseSnapshotArgs(
     };
   }
 
-  return { ok: true, snapshot: { dbPath, outPath, maxRecords } };
+  return { ok: true, snapshot: { dbPath, outPath, inputSnapshotPath, maxRecords } };
 }
 
 interface LinksCliOk {
@@ -256,18 +306,24 @@ function parseLinksArgs(
 
 interface CorrelateCliOk {
   vaultRoot: string;
-  snapshotPath: string;
+  snapshotPath?: string | undefined;
   overridesPath?: string | undefined;
   outPath: string;
+  /** Reuse an existing link map instead of correlating. */
+  existingMapPath?: string | undefined;
 }
 
 function parseCorrelateArgs(
   args: readonly string[],
   cwd: string,
+  options?: { permissive?: boolean | undefined; subcommand?: string | undefined },
 ): { ok: true; correlate: CorrelateCliOk } | { ok: false; message: string } {
+  const subcommand = options?.subcommand ?? 'correlate';
+  const permissive = options?.permissive === true;
   const defaultOut = resolve(cwd, 'out', 'link-map.json');
   let vaultState = createVaultDirFlagState();
   let snapshotPath: string | undefined;
+  let mapPath: string | undefined;
   let overridesPath: string | undefined;
   let outPath = defaultOut;
 
@@ -292,6 +348,15 @@ function parseCorrelateArgs(
     if (snapshotApplied.kind === 'handled') {
       snapshotPath = snapshotApplied.path;
       i = snapshotApplied.nextIndex;
+      continue;
+    }
+    const mapApplied = applyPathFlag(a, args, i, cwd, 'map', './out/link-map.json');
+    if (mapApplied.kind === 'error') {
+      return { ok: false, message: mapApplied.message };
+    }
+    if (mapApplied.kind === 'handled') {
+      mapPath = mapApplied.path;
+      i = mapApplied.nextIndex;
       continue;
     }
     const overridesApplied = applyPathFlag(
@@ -319,10 +384,22 @@ function parseCorrelateArgs(
       i = outApplied.nextIndex;
       continue;
     }
-    return { ok: false, message: unknownSubcommandFlagError('correlate', a) };
+    const mapOutApplied = applyPathFlag(a, args, i, cwd, 'map-out', './out/link-map.json');
+    if (mapOutApplied.kind === 'error') {
+      return { ok: false, message: mapOutApplied.message };
+    }
+    if (mapOutApplied.kind === 'handled') {
+      outPath = mapOutApplied.path;
+      i = mapOutApplied.nextIndex;
+      continue;
+    }
+    if (permissive) {
+      continue;
+    }
+    return { ok: false, message: unknownSubcommandFlagError(subcommand, a) };
   }
 
-  if (snapshotPath === undefined) {
+  if (!permissive && snapshotPath === undefined) {
     return {
       ok: false,
       message:
@@ -337,6 +414,7 @@ function parseCorrelateArgs(
       snapshotPath,
       overridesPath,
       outPath,
+      existingMapPath: mapPath,
     },
   };
 }
@@ -352,13 +430,12 @@ interface RewriteCliOk {
 function parseRewriteArgs(
   args: readonly string[],
   cwd: string,
+  options?: { permissive?: boolean | undefined; subcommand?: string | undefined },
 ): { ok: true; rewrite: RewriteCliOk } | { ok: false; message: string } {
+  const subcommand = options?.subcommand ?? 'rewrite';
+  const permissive = options?.permissive === true;
   let vaultState = createVaultDirFlagState();
   let mapPath: string | undefined;
-  let explicitDryRun = false;
-  let outDir: string | undefined;
-  let inPlace = false;
-  let backup = false;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -383,31 +460,20 @@ function parseRewriteArgs(
       i = mapApplied.nextIndex;
       continue;
     }
-    if (a === '--dry-run') {
-      explicitDryRun = true;
+    if (permissive) {
       continue;
     }
-    const outDirApplied = applyPathFlag(a, args, i, cwd, 'out-dir', './out/rewritten-vault');
-    if (outDirApplied.kind === 'error') {
-      return { ok: false, message: outDirApplied.message };
-    }
-    if (outDirApplied.kind === 'handled') {
-      outDir = outDirApplied.path;
-      i = outDirApplied.nextIndex;
+    if (a === '--dry-run' || a === '--in-place' || a === '--backup' || a.startsWith('--out-dir=')) {
       continue;
     }
-    if (a === '--in-place') {
-      inPlace = true;
+    if (a === '--out-dir') {
+      i++;
       continue;
     }
-    if (a === '--backup') {
-      backup = true;
-      continue;
-    }
-    return { ok: false, message: unknownSubcommandFlagError('rewrite', a) };
+    return { ok: false, message: unknownSubcommandFlagError(subcommand, a) };
   }
 
-  if (mapPath === undefined) {
+  if (!permissive && mapPath === undefined) {
     return {
       ok: false,
       message:
@@ -415,43 +481,151 @@ function parseRewriteArgs(
     };
   }
 
-  if (inPlace && outDir !== undefined) {
-    return { ok: false, message: 'error: use only one of --in-place or --out-dir' };
-  }
-
-  if (explicitDryRun && (inPlace || outDir !== undefined)) {
-    return {
-      ok: false,
-      message: 'error: --dry-run cannot be combined with --in-place or --out-dir',
-    };
-  }
-
-  if (backup && !inPlace) {
-    return { ok: false, message: 'error: --backup is only valid with --in-place' };
-  }
-
-  let mode: RewriteCliOk['mode'];
-  if (inPlace) {
-    mode = 'in-place';
-  } else if (outDir !== undefined) {
-    mode = 'out-dir';
-  } else {
-    mode = 'dry-run';
+  const modeParsed = parseRewriteOutputMode(args, cwd);
+  if (!modeParsed.ok) {
+    return modeParsed;
   }
 
   return {
     ok: true,
     rewrite: {
       vaultRoot: resolveVaultRootFromState(vaultState, cwd),
-      mapPath,
-      mode,
-      outDir: mode === 'out-dir' ? outDir : undefined,
-      backup: backup ? true : undefined,
+      mapPath: mapPath ?? '',
+      mode: modeParsed.mode,
+      outDir: modeParsed.outDir,
+      backup: modeParsed.backup,
     },
   };
 }
 
+interface RunCliOk {
+  vaultRoot: string;
+  dbPath?: string | undefined;
+  snapshotPath?: string | undefined;
+  snapshotOutPath: string;
+  mapPath?: string | undefined;
+  mapOutPath: string;
+  overridesPath?: string | undefined;
+  maxRecords?: number | undefined;
+  rewrite: Omit<RewriteCliOk, 'mapPath' | 'vaultRoot'>;
+}
+
+function parseRunArgs(
+  args: readonly string[],
+  cwd: string,
+): { ok: true; run: RunCliOk } | { ok: false; message: string } {
+  if (!hasExplicitVaultArg(args)) {
+    return {
+      ok: false,
+      message: 'error: run requires --vault-dir <path> (or --vault)',
+    };
+  }
+
+  const knownFlags = assertKnownRunFlags(args);
+  if (!knownFlags.ok) {
+    return knownFlags;
+  }
+
+  const runOpts = { permissive: true, subcommand: 'run' } as const;
+  const snapshotParsed = parseSnapshotArgs(args, cwd, runOpts);
+  if (!snapshotParsed.ok) {
+    return snapshotParsed;
+  }
+  const correlateParsed = parseCorrelateArgs(args, cwd, runOpts);
+  if (!correlateParsed.ok) {
+    return correlateParsed;
+  }
+  const rewriteParsed = parseRewriteArgs(args, cwd, runOpts);
+  if (!rewriteParsed.ok) {
+    return rewriteParsed;
+  }
+
+  const snap = snapshotParsed.snapshot;
+  const corr = correlateParsed.correlate;
+  const inputSnapshot = snap.inputSnapshotPath ?? corr.snapshotPath;
+  if (
+    inputSnapshot === undefined &&
+    snap.dbPath === undefined &&
+    corr.existingMapPath === undefined
+  ) {
+    return {
+      ok: false,
+      message:
+        'error: run requires --db <path> unless reusing an existing snapshot via --snapshot and/or --map',
+    };
+  }
+
+  return {
+    ok: true,
+    run: {
+      vaultRoot: rewriteParsed.rewrite.vaultRoot,
+      dbPath: snap.dbPath,
+      snapshotPath: inputSnapshot,
+      snapshotOutPath: snap.outPath,
+      mapPath: corr.existingMapPath,
+      mapOutPath: corr.outPath,
+      overridesPath: corr.overridesPath,
+      maxRecords: snap.maxRecords,
+      rewrite: {
+        mode: rewriteParsed.rewrite.mode,
+        outDir: rewriteParsed.rewrite.outDir,
+        backup: rewriteParsed.rewrite.backup,
+      },
+    },
+  };
+}
+
+async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<number> {
+  let snapshotPath = parsed.snapshotPath;
+  if (snapshotPath === undefined && parsed.mapPath === undefined) {
+    const code = await runSnapshot(
+      {
+        dbPath: parsed.dbPath as string,
+        outPath: parsed.snapshotOutPath,
+        maxRecords: parsed.maxRecords,
+      },
+      streams,
+    );
+    if (code !== 0) {
+      return code;
+    }
+    snapshotPath = parsed.snapshotOutPath;
+  }
+
+  let mapPath = parsed.mapPath;
+  if (mapPath === undefined) {
+    const code = await runCorrelate(
+      {
+        vaultRoot: parsed.vaultRoot,
+        snapshotPath,
+        overridesPath: parsed.overridesPath,
+        outPath: parsed.mapOutPath,
+      },
+      streams,
+    );
+    if (code !== 0) {
+      return code;
+    }
+    mapPath = parsed.mapOutPath;
+  }
+
+  return runRewrite(
+    {
+      vaultRoot: parsed.vaultRoot,
+      mapPath,
+      mode: parsed.rewrite.mode,
+      outDir: parsed.rewrite.outDir,
+      backup: parsed.rewrite.backup,
+    },
+    streams,
+  );
+}
+
 async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promise<number> {
+  if (parsed.snapshotPath === undefined) {
+    streams.stderr.write('correlate: missing --snapshot path\n');
+    return 2;
+  }
   try {
     const index = await buildVaultIndex(parsed.vaultRoot);
     if (!index.ok) {
@@ -633,6 +807,10 @@ async function runLinks(parsed: LinksCliOk, streams: MainStreams): Promise<numbe
 }
 
 async function runSnapshot(parsed: SnapshotCliOk, streams: MainStreams): Promise<number> {
+  if (parsed.dbPath === undefined) {
+    streams.stderr.write('snapshot: missing --db path\n');
+    return 2;
+  }
   try {
     const readOpts =
       parsed.maxRecords !== undefined ? { maxRecords: parsed.maxRecords } : undefined;
@@ -699,13 +877,15 @@ function usage(): string {
     '',
     'Usage:',
     '  evernote-obsidian [--help|--version]',
+    '  evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '  evernote-obsidian index [--vault-dir <path>]',
     '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',
     '  evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]',
-    '  evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>]',
+    '  evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>] [--map-out <path>]',
     '  evernote-obsidian rewrite --map <path> [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '',
     'Commands:',
+    '  run        Chain snapshot → correlate → rewrite (typical one-shot fix; --db unless --snapshot/--map reuse intermediates).',
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
     '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
@@ -726,6 +906,10 @@ function usage(): string {
     '  --db                           Path to evernote-backup SQLite database (required for snapshot)',
     '  --out                          Output path (snapshot default: ./out/evernote-notes.json; correlate: ./out/link-map.json; links: stdout unless set)',
     '  --max-notes                    Stop after N notes (optional cap; notes ordered by title)',
+    '  --snapshot-out                 Snapshot JSON output for run (alias: --out when generating a snapshot)',
+    '',
+    '  run prints one JSON summary per step on stdout (pretty-printed). Scripts should parse brace-balanced objects or call step commands separately.',
+    '  --map-out                      Link map output for run (default: ./out/link-map.json)',
     '',
     '  evernote-backup: https://github.com/vzhd1701/evernote-backup',
     '',
