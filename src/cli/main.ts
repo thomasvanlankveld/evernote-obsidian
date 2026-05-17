@@ -6,6 +6,7 @@ export type { MainOptions, MainStreams } from './cliTypes.ts';
 
 import type { MainOptions, MainStreams } from './cliTypes.ts';
 import { parseCorrelateArgs, runCorrelate } from './correlateCommand.ts';
+import { parseFixResourcesArgs, runFixResources } from './fixResourcesCommand.ts';
 import { parseIndexArgs, runIndex } from './indexCommand.ts';
 import { parseLinksArgs, runLinks } from './linksCommand.ts';
 import { parseRewriteArgs, runRewrite } from './rewriteCommand.ts';
@@ -74,6 +75,15 @@ export async function main(
       return 2;
     }
     return runRewrite(parsed.rewrite, streams);
+  }
+
+  if (cmd === 'fix-resources') {
+    const parsed = parseFixResourcesArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runFixResources(parsed.fixResources, streams);
   }
 
   if (cmd === 'run') {

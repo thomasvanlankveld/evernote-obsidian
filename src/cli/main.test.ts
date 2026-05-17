@@ -204,6 +204,31 @@ describe('cli main', () => {
     assert.match(err(), /unknown links flag/);
   });
 
+  it('fix-resources dry-run lists importer resource embed changes', async () => {
+    const fixture = join(cliDir, '../vault/__fixtures__/resources');
+    const { streams, out, err } = makeStreams();
+    const code = await main(['fix-resources', '--vault-dir', fixture], streams);
+    assert.equal(code, 0);
+    assert.equal(err(), '');
+    const j = JSON.parse(out()) as {
+      ok: boolean;
+      mode: string;
+      replacements: number;
+      changes: { file: string; line: number }[];
+    };
+    assert.equal(j.ok, true);
+    assert.equal(j.mode, 'dry-run');
+    assert.equal(j.replacements, 2);
+    assert.equal(j.changes.length, 2);
+  });
+
+  it('fix-resources exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['fix-resources', '--vault-dir', uniqueFixtureVault, '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown fix-resources flag/);
+  });
+
   it('correlate exits 2 when --snapshot is missing', async () => {
     const { streams, err } = makeStreams();
     const code = await main(['correlate'], streams);
