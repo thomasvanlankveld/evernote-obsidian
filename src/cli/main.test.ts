@@ -577,22 +577,29 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
 
-      const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 5);
-      const snapSummary = summaries[0] as { ok: boolean; count: number };
-      const corrSummary = summaries[1] as { ok: boolean; count: number };
-      const unescapeSummary = summaries[2] as { replacements: number };
-      const rewriteSummary = summaries[3] as { mode: string; wroteFiles: boolean };
-      const fixResourcesSummary = summaries[4] as { mode: string; wroteFiles: boolean };
-      assert.equal(unescapeSummary.replacements, 0);
-      assert.equal(snapSummary.ok, true);
-      assert.equal(snapSummary.count, 3);
-      assert.equal(corrSummary.ok, true);
-      assert.equal(corrSummary.count, 3);
-      assert.equal(rewriteSummary.mode, 'dry-run');
-      assert.equal(rewriteSummary.wroteFiles, false);
-      assert.equal(fixResourcesSummary.mode, 'dry-run');
-      assert.equal(fixResourcesSummary.wroteFiles, false);
+      const report = JSON.parse(out()) as {
+        ok: boolean;
+        steps: {
+          id: string;
+          status: string;
+          summary?: {
+            ok?: boolean;
+            count?: number;
+            replacements?: number;
+            mode?: string;
+            wroteFiles?: boolean;
+          };
+        }[];
+      };
+      assert.equal(report.ok, true);
+      assert.equal(report.steps.length, 5);
+      assert.equal(report.steps[0]?.summary?.count, 3);
+      assert.equal(report.steps[1]?.summary?.count, 3);
+      assert.equal(report.steps[2]?.summary?.replacements, 0);
+      assert.equal(report.steps[3]?.summary?.mode, 'dry-run');
+      assert.equal(report.steps[3]?.summary?.wroteFiles, false);
+      assert.equal(report.steps[4]?.summary?.mode, 'dry-run');
+      assert.equal(report.steps[4]?.summary?.wroteFiles, false);
 
       const snapStat = await stat(snapOut);
       assert.ok(snapStat.isFile());
@@ -625,10 +632,13 @@ describe('cli main', () => {
       );
       assert.equal(code, 0);
       assert.equal(err(), '');
-      const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 4);
-      const corrSummary = summaries[0] as { ok: boolean };
-      assert.equal(corrSummary.ok, true);
+      const report = JSON.parse(out()) as {
+        ok: boolean;
+        steps: { id: string; status: string; summary?: { ok?: boolean } }[];
+      };
+      assert.equal(report.ok, true);
+      assert.equal(report.steps[0]?.status, 'skipped');
+      assert.equal(report.steps[1]?.summary?.ok, true);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -659,8 +669,9 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.match(err(), /--map skips the snapshot step/);
       assert.match(err(), /--db is ignored/);
-      const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 3);
+      const report = JSON.parse(out()) as { ok: boolean; steps: { status: string }[] };
+      assert.equal(report.ok, true);
+      assert.equal(report.steps.filter((s) => s.status === 'skipped').length, 2);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -688,16 +699,18 @@ describe('cli main', () => {
       });
       assert.equal(code, 0);
       assert.equal(err(), '');
-      const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 3);
-      const rewriteSummary = summaries[1] as {
-        mode: string;
-        replacements: number;
-        filesChanged: number;
+      const report = JSON.parse(out()) as {
+        ok: boolean;
+        steps: {
+          id: string;
+          summary?: { mode?: string; replacements?: number; filesChanged?: number };
+        }[];
       };
-      assert.equal(rewriteSummary.mode, 'dry-run');
-      assert.ok(rewriteSummary.replacements >= 3);
-      assert.ok(rewriteSummary.filesChanged >= 1);
+      assert.equal(report.ok, true);
+      const rewriteSummary = report.steps.find((s) => s.id === 'rewrite')?.summary;
+      assert.equal(rewriteSummary?.mode, 'dry-run');
+      assert.ok((rewriteSummary?.replacements ?? 0) >= 3);
+      assert.ok((rewriteSummary?.filesChanged ?? 0) >= 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -731,9 +744,13 @@ describe('cli main', () => {
       );
       assert.equal(code, 0);
       assert.equal(err(), '');
-      const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 3);
-      assert.equal((summaries[1] as { mode: string }).mode, 'dry-run');
+      const report = JSON.parse(out()) as {
+        ok: boolean;
+        steps: { id: string; status: string; summary?: { mode?: string } }[];
+      };
+      assert.equal(report.ok, true);
+      assert.equal(report.steps.filter((s) => s.status === 'skipped').length, 2);
+      assert.equal(report.steps.find((s) => s.id === 'rewrite')?.summary?.mode, 'dry-run');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -749,7 +766,9 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 2);
-      assert.equal(out(), '');
+      const report = JSON.parse(out()) as { ok: boolean; failedStep?: string };
+      assert.equal(report.ok, false);
+      assert.equal(report.failedStep, 'snapshot');
       assert.match(err(), /^snapshot:/);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -778,21 +797,64 @@ describe('cli main', () => {
         cwd: dir,
       });
       assert.equal(code, 1);
-      const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 1);
-      const stderrObjects = parseJsonOutputs(err()) as {
+      const report = JSON.parse(out()) as {
         ok: boolean;
-        reason?: string;
-        counts?: { unmatched: number };
-      }[];
-      assert.match(err(), /1 unmatched/);
-      const summary = stderrObjects.find((o) => o.counts !== undefined);
-      assert.equal(summary?.ok, false);
-      assert.equal(summary?.reason, 'correlation_failed');
-      const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+        failedStep?: string;
+        steps: {
+          id: string;
+          humanDetail?: string;
+          summary?: { reason?: string; counts?: { unmatched: number } };
+        }[];
+      };
+      assert.equal(report.ok, false);
+      assert.equal(report.failedStep, 'correlate');
+      const correlateStep = report.steps.find((s) => s.id === 'correlate');
+      assert.match(correlateStep?.humanDetail ?? '', /1 unmatched/);
+      assert.equal(correlateStep?.summary?.reason, 'correlation_failed');
+      assert.equal(correlateStep?.summary?.counts?.unmatched, 1);
+      assert.match(err(), /Run failed at correlate/);
+      const correlateReportFile = JSON.parse(await readFile(reportPath, 'utf8')) as {
         unmatched: { guid: string }[];
       };
-      assert.equal(report.unmatched.length, 1);
+      assert.equal(correlateReportFile.unmatched.length, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run TTY prints human correlate failure on stderr without stdout JSON', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-unmatched-tty-'));
+    const dbPath = join(dir, 'en.db');
+    const reportPath = join(dir, 'out', 'correlate-report.json');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE notes(
+        guid TEXT PRIMARY KEY,
+        title TEXT,
+        notebook_guid TEXT,
+        is_active BOOLEAN,
+        raw_note BLOB
+      );
+      INSERT INTO notes(guid, title, is_active) VALUES ('gx', 'Nope Nope', 1);
+    `);
+    db.close();
+    try {
+      const { streams, out, err } = makeStreams({ stdoutTty: true });
+      const code = await main(['run', '--vault-dir', uniqueFixtureVault, '--db', dbPath], streams, {
+        cwd: dir,
+      });
+      assert.equal(code, 1);
+      assert.equal(parseJsonOutputs(out()).length, 0, 'TTY run failure: no stdout JSON');
+      assert.match(err(), /evernote-obsidian run/);
+      assert.match(err(), /✗ correlate/);
+      assert.match(err(), /1 unmatched/);
+      assert.match(err(), /see .*correlate-report\.json/);
+      assert.match(err(), /Run failed at correlate/);
+      assert.doesNotMatch(err(), /"ok":\s*false/, 'no duplicate correlate failure JSON on stderr');
+      const correlateReportFile = JSON.parse(await readFile(reportPath, 'utf8')) as {
+        unmatched: { guid: string }[];
+      };
+      assert.equal(correlateReportFile.unmatched.length, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -822,20 +884,22 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 1);
-      const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 1);
-      const summary = parseJsonOutputs(err()).find(
-        (o): o is { ok: boolean; reason: string; counts: unknown } =>
-          typeof o === 'object' && o !== null && 'counts' in o,
-      );
-      assert.equal(summary?.ok, false);
-      assert.equal(summary?.reason, 'vault_index_collisions');
-      const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+      const report = JSON.parse(out()) as {
+        ok: boolean;
+        failedStep?: string;
+        steps: { id: string; summary?: { reason?: string } }[];
+      };
+      assert.equal(report.ok, false);
+      assert.equal(report.failedStep, 'correlate');
+      const correlateStep = report.steps.find((s) => s.id === 'correlate');
+      assert.equal(correlateStep?.summary?.reason, 'vault_index_collisions');
+      assert.match(err(), /Run failed at correlate/);
+      const correlateReportFile = JSON.parse(await readFile(reportPath, 'utf8')) as {
         reason: string;
         collisions: unknown[];
       };
-      assert.equal(report.reason, 'vault_index_collisions');
-      assert.equal(report.collisions.length, 1);
+      assert.equal(correlateReportFile.reason, 'vault_index_collisions');
+      assert.equal(correlateReportFile.collisions.length, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -875,11 +939,14 @@ describe('cli main', () => {
       );
       assert.equal(code, 0);
       assert.equal(err(), '');
-      const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 3);
-      const summary = summaries[1] as { mode: string; wroteFiles: boolean };
-      assert.equal(summary.mode, 'out-dir');
-      assert.equal(summary.wroteFiles, true);
+      const report = JSON.parse(out()) as {
+        ok: boolean;
+        steps: { id: string; summary?: { mode?: string; wroteFiles?: boolean } }[];
+      };
+      assert.equal(report.ok, true);
+      const rewriteSummary = report.steps.find((s) => s.id === 'rewrite')?.summary;
+      assert.equal(rewriteSummary?.mode, 'out-dir');
+      assert.equal(rewriteSummary?.wroteFiles, true);
       const mixed = await readFile(join(outVault, 'mixed.md'), 'utf8');
       assert.match(mixed, /\[\[other\.md\|My note alias\]\]/);
     } finally {

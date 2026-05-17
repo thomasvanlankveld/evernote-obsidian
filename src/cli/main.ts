@@ -48,7 +48,7 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    return runSnapshot(parsed.snapshot, streams);
+    return (await runSnapshot(parsed.snapshot, streams)).exitCode;
   }
 
   if (cmd === 'links') {
@@ -66,7 +66,7 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    return runCorrelate(parsed.correlate, streams);
+    return (await runCorrelate(parsed.correlate, streams)).exitCode;
   }
 
   if (cmd === 'rewrite') {
@@ -75,7 +75,7 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    return runRewrite(parsed.rewrite, streams);
+    return (await runRewrite(parsed.rewrite, streams)).exitCode;
   }
 
   if (cmd === 'unescape-links') {
@@ -84,7 +84,7 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    return runUnescapeLinks(parsed.unescape, streams);
+    return (await runUnescapeLinks(parsed.unescape, streams)).exitCode;
   }
 
   if (cmd === 'fix-resources') {
@@ -93,7 +93,7 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    return runFixResources(parsed.fixResources, streams);
+    return (await runFixResources(parsed.fixResources, streams)).exitCode;
   }
 
   if (cmd === 'run') {
@@ -102,7 +102,7 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    return runRun(parsed.run, streams);
+    return runRun(parsed.run, streams, { cwd });
   }
 
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);

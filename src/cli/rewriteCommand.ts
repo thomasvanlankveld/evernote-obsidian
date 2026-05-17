@@ -18,6 +18,7 @@ import {
 } from './argvScan.ts';
 import { createRewriteOutputScanState, finalizeRewriteOutputMode } from './cliFlags.ts';
 import type { MainStreams } from './cliTypes.ts';
+import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
 import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 export interface RewriteCliOk {
@@ -78,13 +79,19 @@ export function parseRewriteArgs(
   };
 }
 
-export async function runRewrite(parsed: RewriteCliOk, streams: MainStreams): Promise<number> {
+export async function runRewrite(
+  parsed: RewriteCliOk,
+  streams: MainStreams,
+  invoke?: StepInvokeContext,
+): Promise<StepInvokeResult> {
   try {
+    emitStepProgress(invoke, 'rewrite: loading link map…');
     const rawMap = await readFile(parsed.mapPath, 'utf8');
     const linkMap = parseLinkMapJson(rawMap);
     assertLinkMapVaultRootMatches(linkMap, parsed.vaultRoot);
     const guidToPath = new Map<string, string>(Object.entries(linkMap.guidToPath));
 
+    emitStepProgress(invoke, 'rewrite: scanning vault…');
     const files = await walkVaultMarkdownFiles(parsed.vaultRoot);
     let filesScanned = 0;
     let filesChanged = 0;
@@ -116,7 +123,7 @@ export async function runRewrite(parsed: RewriteCliOk, streams: MainStreams): Pr
         const outRoot = parsed.outDir;
         if (outRoot === undefined || outRoot === '') {
           streams.stderr.write('rewrite: --out-dir requires a non-empty path\n');
-          return 2;
+          return { exitCode: 2 };
         }
         const rel = relative(parsed.vaultRoot, abs).split('\\').join('/');
         const dest = join(outRoot, rel);
@@ -132,39 +139,40 @@ export async function runRewrite(parsed: RewriteCliOk, streams: MainStreams): Pr
       await atomicReplaceFile(abs, next);
     }
 
-    streams.stdout.write(
-      `${JSON.stringify(
-        {
-          ok: true,
-          mode: parsed.mode,
-          vault: parsed.vaultRoot,
-          map: parsed.mapPath,
-          filesScanned,
-          filesChanged,
-          replacements,
-          skippedUnmapped,
-          wroteFiles: parsed.mode !== 'dry-run',
-        },
-        null,
-        2,
-      )}\n`,
+    const summary = {
+      ok: true,
+      mode: parsed.mode,
+      vault: parsed.vaultRoot,
+      map: parsed.mapPath,
+      filesScanned,
+      filesChanged,
+      replacements,
+      skippedUnmapped,
+      wroteFiles: parsed.mode !== 'dry-run',
+    };
+    emitStepProgress(
+      invoke,
+      `rewrite: ${filesChanged} file${filesChanged === 1 ? '' : 's'} changed, ${replacements} replacement${replacements === 1 ? '' : 's'}`,
     );
-    return 0;
+    if (invoke?.quiet !== true) {
+      streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    }
+    return { exitCode: 0, summary };
   } catch (e) {
     if (e instanceof VaultIndexRootError) {
       streams.stderr.write(`${e.message}\n`);
-      return 2;
+      return { exitCode: 2 };
     }
     if (e instanceof LinkMapParseError) {
       streams.stderr.write(`rewrite: ${e.message}\n`);
-      return 2;
+      return { exitCode: 2 };
     }
     if (e instanceof LinkMapVaultRootMismatchError) {
       streams.stderr.write(`rewrite: ${e.message}\n`);
-      return 2;
+      return { exitCode: 2 };
     }
     const msg = e instanceof Error ? e.message : String(e);
     streams.stderr.write(`rewrite: ${msg}\n`);
-    return 2;
+    return { exitCode: 2 };
   }
 }

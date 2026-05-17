@@ -9,6 +9,7 @@ import { VaultIndexRootError, walkVaultMarkdownFiles } from '../vault/vaultIndex
 import { rewriteOutputModeArgHandlers, scanArgv, vaultDirArgHandler } from './argvScan.ts';
 import { createRewriteOutputScanState, finalizeRewriteOutputMode } from './cliFlags.ts';
 import type { MainStreams } from './cliTypes.ts';
+import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
 import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 export interface FixResourcesCliOk {
@@ -80,8 +81,10 @@ export function parseFixResourcesArgs(
 export async function runFixResources(
   parsed: FixResourcesCliOk,
   streams: MainStreams,
-): Promise<number> {
+  invoke?: StepInvokeContext,
+): Promise<StepInvokeResult> {
   try {
+    emitStepProgress(invoke, 'fix-resources: scanning vault…');
     const files = await walkVaultMarkdownFiles(parsed.vaultRoot);
     let filesScanned = 0;
     let filesChanged = 0;
@@ -111,7 +114,7 @@ export async function runFixResources(
         const outRoot = parsed.outDir;
         if (outRoot === undefined || outRoot === '') {
           streams.stderr.write('fix-resources: --out-dir requires a non-empty path\n');
-          return 2;
+          return { exitCode: 2 };
         }
         const dest = join(outRoot, rel);
         await mkdir(dirname(dest), { recursive: true });
@@ -126,30 +129,31 @@ export async function runFixResources(
       await atomicReplaceFile(abs, next);
     }
 
-    streams.stdout.write(
-      `${JSON.stringify(
-        {
-          ok: true,
-          mode: parsed.mode,
-          vault: parsed.vaultRoot,
-          filesScanned,
-          filesChanged,
-          replacements,
-          wroteFiles: parsed.mode !== 'dry-run',
-          changes: parsed.mode === 'dry-run' ? changes : undefined,
-        },
-        null,
-        2,
-      )}\n`,
+    const summary = {
+      ok: true,
+      mode: parsed.mode,
+      vault: parsed.vaultRoot,
+      filesScanned,
+      filesChanged,
+      replacements,
+      wroteFiles: parsed.mode !== 'dry-run',
+      changes: parsed.mode === 'dry-run' ? changes : undefined,
+    };
+    emitStepProgress(
+      invoke,
+      `fix-resources: ${filesChanged} file${filesChanged === 1 ? '' : 's'} changed, ${replacements} replacement${replacements === 1 ? '' : 's'}`,
     );
-    return 0;
+    if (invoke?.quiet !== true) {
+      streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    }
+    return { exitCode: 0, summary };
   } catch (e) {
     if (e instanceof VaultIndexRootError) {
       streams.stderr.write(`${e.message}\n`);
-      return 2;
+      return { exitCode: 2 };
     }
     const msg = e instanceof Error ? e.message : String(e);
     streams.stderr.write(`fix-resources: ${msg}\n`);
-    return 2;
+    return { exitCode: 2 };
   }
 }

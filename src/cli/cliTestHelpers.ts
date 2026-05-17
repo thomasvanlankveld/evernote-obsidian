@@ -24,7 +24,16 @@ export function parseJsonOutputs(text: string): unknown[] {
   return results;
 }
 
-export function makeStreams(): { streams: MainStreams; out: () => string; err: () => string } {
+export type MakeStreamsOptions = {
+  /** When true, stdout is treated as a TTY (human `run` output). */
+  stdoutTty?: boolean | undefined;
+};
+
+export function makeStreams(options?: MakeStreamsOptions): {
+  streams: MainStreams;
+  out: () => string;
+  err: () => string;
+} {
   const outChunks: Buffer[] = [];
   const errChunks: Buffer[] = [];
   const stdout = new Writable({
@@ -32,13 +41,16 @@ export function makeStreams(): { streams: MainStreams; out: () => string; err: (
       outChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       cb();
     },
-  });
+  }) as NodeJS.WriteStream;
   const stderr = new Writable({
     write(chunk, _enc, cb) {
       errChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       cb();
     },
-  });
+  }) as NodeJS.WriteStream;
+  if (options?.stdoutTty === true) {
+    stdout.isTTY = true;
+  }
   return {
     streams: { stdout, stderr },
     out: () => Buffer.concat(outChunks).toString('utf8'),

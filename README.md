@@ -38,9 +38,9 @@ evernote-obsidian run --vault-dir /path/to/imported-notes --db /path/to/en_backu
 evernote-obsidian run --vault-dir /path/to/imported-notes --db /path/to/en_backup.db --out-dir ./out/rewritten-vault
 ```
 
-`run` chains **snapshot → correlate → rewrite → fix-resources** (link repair plus importer `_resources` embed paths). Use **`--dry-run`** explicitly if you like (it is the default when neither **`--out-dir`** nor **`--in-place`** is set). Re-run with **`--snapshot`** and/or **`--map`** to skip steps when intermediate files already exist (map-only runs rewrite and fix-resources only).
+`run` chains **snapshot → correlate → unescape-links → rewrite → fix-resources** (link repair plus importer `_resources` embed paths). Use **`--dry-run`** explicitly if you like (it is the default when neither **`--out-dir`** nor **`--in-place`** is set). Re-run with **`--snapshot`** and/or **`--map`** to skip steps when intermediate files already exist (map-only runs rewrite and fix-resources only).
 
-Each step prints a JSON summary on stdout (pretty-printed). For scripting, parse brace-balanced JSON objects or use the step commands separately.
+In a terminal, `run` prints a short human-readable step summary (✓/✗ per step and pass/fail). For scripts, use **`--json`** to get one JSON object on stdout with all step summaries, or **`--json-steps`** for the legacy per-step JSON blobs. Non-TTY stdout (pipes, CI) defaults to **`--json`**.
 
 ## Workflow
 
@@ -56,7 +56,7 @@ Optional: **`index`** (preflight title uniqueness), **`links`** (report remainin
 
 ## Commands
 
-- **`evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--report <path>] [--verbose] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Run the full pipeline (ends with **`fix-resources`** for importer `Evernote/Writings/_resources/` embed paths). Requires explicit **`--vault-dir`** (or **`--vault`**). **`--db`** is required on a fresh run; omit it when reusing **`--snapshot`** and/or **`--map`**. **`--out`** sets the snapshot JSON path when generating a snapshot (default `./out/evernote-notes.json`); **`--map-out`** sets the link map path (default `./out/link-map.json`). Pass **`--snapshot`** / **`--map`** to skip those steps. Correlate failure output matches **`correlate`** (**`--report`**, **`--verbose`**).
+- **`evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--report <path>] [--verbose] [--max-notes <n>] [--json | --json-steps] [-q] [--progress] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Run the full pipeline (ends with **`fix-resources`** for importer `Evernote/Writings/_resources/` embed paths). Requires explicit **`--vault-dir`** (or **`--vault`**). **`--db`** is required on a fresh run; omit it when reusing **`--snapshot`** and/or **`--map`**. **`--out`** sets the snapshot JSON path when generating a snapshot (default `./out/evernote-notes.json`); **`--map-out`** sets the link map path (default `./out/link-map.json`). Pass **`--snapshot`** / **`--map`** to skip those steps. Human summary on stdout in a TTY; **`--json`** for one machine-readable summary; **`--json-steps`** for legacy per-step stdout JSON. Correlate failure output matches **`correlate`** (**`--report`**, **`--verbose`**).
 
 - **`evernote-obsidian index [--vault-dir <path>]`** — Walk **`--vault-dir`** (default `./data`) and report whether normalized titles and frontmatter **`evernote-guid:`** values are unique enough for correlation.
 - **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).
