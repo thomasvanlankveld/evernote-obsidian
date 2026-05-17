@@ -1,9 +1,16 @@
-import { assertKnownRunFlags, hasExplicitVaultArg } from './cliFlags.ts';
+import { resolve } from 'node:path';
+import {
+  pathFlagHandler,
+  positiveIntFlagHandler,
+  rewriteOutputModeArgHandlers,
+  scanArgv,
+  vaultDirArgHandler,
+} from './argvScan.ts';
+import { createRewriteOutputScanState, finalizeRewriteOutputMode } from './cliFlags.ts';
 import type { MainStreams } from './cliTypes.ts';
-import { parseCorrelateArgs, runCorrelate } from './correlateCommand.ts';
-import { parseRewriteArgs, type RewriteCliOk, runRewrite } from './rewriteCommand.ts';
-import { parseSnapshotArgs, runSnapshot } from './snapshotCommand.ts';
-import { parseVaultRootFromArgs } from './vaultDirFlag.ts';
+import { runCorrelate } from './correlateCommand.ts';
+import { type RewriteCliOk, runRewrite } from './rewriteCommand.ts';
+import { runSnapshot } from './snapshotCommand.ts';
 
 export interface RunCliOk {
   vaultRoot: string;
@@ -21,49 +28,62 @@ export function parseRunArgs(
   args: readonly string[],
   cwd: string,
 ): { ok: true; run: RunCliOk } | { ok: false; message: string } {
-  if (!hasExplicitVaultArg(args)) {
+  const snapshotOutDefault = resolve(cwd, 'out', 'evernote-notes.json');
+  const mapOutDefault = resolve(cwd, 'out', 'link-map.json');
+  let dbPath: string | undefined;
+  let inputSnapshotPath: string | undefined;
+  let snapshotOutPath = snapshotOutDefault;
+  let existingMapPath: string | undefined;
+  let mapOutPath = mapOutDefault;
+  let overridesPath: string | undefined;
+  let maxRecords: number | undefined;
+  const rewriteOutput = createRewriteOutputScanState();
+
+  const scanned = scanArgv(args, cwd, {
+    subcommand: 'run',
+    handlers: [
+      vaultDirArgHandler(),
+      pathFlagHandler('db', './en_backup.db', (path) => {
+        dbPath = path;
+      }),
+      pathFlagHandler('snapshot', './out/evernote-notes.json', (path) => {
+        inputSnapshotPath = path;
+      }),
+      pathFlagHandler('snapshot-out', './out/evernote-notes.json', (path) => {
+        snapshotOutPath = path;
+      }),
+      pathFlagHandler('map', './out/link-map.json', (path) => {
+        existingMapPath = path;
+      }),
+      pathFlagHandler('map-out', './out/link-map.json', (path) => {
+        mapOutPath = path;
+      }),
+      pathFlagHandler('out', './out/link-map.json', (path) => {
+        mapOutPath = path;
+      }),
+      pathFlagHandler('overrides', './out/correlation-overrides.json', (path) => {
+        overridesPath = path;
+      }),
+      positiveIntFlagHandler('max-notes', (value) => {
+        maxRecords = value;
+      }),
+      ...rewriteOutputModeArgHandlers(rewriteOutput),
+    ],
+  });
+  if (!scanned.ok) {
+    return scanned;
+  }
+
+  if (scanned.vaultState.explicitPath === undefined) {
     return {
       ok: false,
       message: 'error: run requires --vault-dir <path> (or --vault)',
     };
   }
 
-  const knownFlags = assertKnownRunFlags(args);
-  if (!knownFlags.ok) {
-    return knownFlags;
-  }
-
-  const vaultParsed = parseVaultRootFromArgs(args, cwd);
-  if (!vaultParsed.ok) {
-    return vaultParsed;
-  }
-
-  const runOpts = {
-    permissive: true,
-    subcommand: 'run',
-    vaultRoot: vaultParsed.vaultRoot,
-  } as const;
-  const snapshotParsed = parseSnapshotArgs(args, cwd, runOpts);
-  if (!snapshotParsed.ok) {
-    return snapshotParsed;
-  }
-  const correlateParsed = parseCorrelateArgs(args, cwd, runOpts);
-  if (!correlateParsed.ok) {
-    return correlateParsed;
-  }
-  const rewriteParsed = parseRewriteArgs(args, cwd, runOpts);
-  if (!rewriteParsed.ok) {
-    return rewriteParsed;
-  }
-
-  const snap = snapshotParsed.snapshot;
-  const corr = correlateParsed.correlate;
-  const inputSnapshot = snap.inputSnapshotPath ?? corr.snapshotPath;
-  if (
-    inputSnapshot === undefined &&
-    snap.dbPath === undefined &&
-    corr.existingMapPath === undefined
-  ) {
+  const vaultRoot = scanned.vaultState.explicitPath;
+  const inputSnapshot = inputSnapshotPath;
+  if (inputSnapshot === undefined && dbPath === undefined && existingMapPath === undefined) {
     return {
       ok: false,
       message:
@@ -71,21 +91,26 @@ export function parseRunArgs(
     };
   }
 
+  const modeParsed = finalizeRewriteOutputMode(rewriteOutput);
+  if (!modeParsed.ok) {
+    return modeParsed;
+  }
+
   return {
     ok: true,
     run: {
-      vaultRoot: vaultParsed.vaultRoot,
-      dbPath: snap.dbPath,
+      vaultRoot,
+      dbPath,
       snapshotPath: inputSnapshot,
-      snapshotOutPath: snap.outPath,
-      mapPath: corr.existingMapPath,
-      mapOutPath: corr.outPath,
-      overridesPath: corr.overridesPath,
-      maxRecords: snap.maxRecords,
+      snapshotOutPath,
+      mapPath: existingMapPath,
+      mapOutPath,
+      overridesPath,
+      maxRecords,
       rewrite: {
-        mode: rewriteParsed.rewrite.mode,
-        outDir: rewriteParsed.rewrite.outDir,
-        backup: rewriteParsed.rewrite.backup,
+        mode: modeParsed.mode,
+        outDir: modeParsed.outDir,
+        backup: modeParsed.backup,
       },
     },
   };

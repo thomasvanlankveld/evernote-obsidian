@@ -9,13 +9,15 @@ import {
 import { atomicReplaceFile } from '../fs/atomicReplaceFile.ts';
 import { rewriteMarkdownWithGuidMap } from '../vault/rewriteEvernoteLinks.ts';
 import { VaultIndexRootError, walkVaultMarkdownFiles } from '../vault/vaultIndex.ts';
-import { applyPathFlag, parseRewriteOutputMode, unknownSubcommandFlagError } from './cliFlags.ts';
-import type { MainStreams, SubcommandParseOptions } from './cliTypes.ts';
 import {
-  applyVaultDirFlag,
-  createVaultDirFlagState,
-  resolveVaultRootFromState,
-} from './vaultDirFlag.ts';
+  pathFlagHandler,
+  rewriteOutputModeArgHandlers,
+  scanArgv,
+  vaultDirArgHandler,
+} from './argvScan.ts';
+import { createRewriteOutputScanState, finalizeRewriteOutputMode } from './cliFlags.ts';
+import type { MainStreams } from './cliTypes.ts';
+import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 export interface RewriteCliOk {
   vaultRoot: string;
@@ -28,53 +30,27 @@ export interface RewriteCliOk {
 export function parseRewriteArgs(
   args: readonly string[],
   cwd: string,
-  options?: SubcommandParseOptions,
+  options?: { subcommand?: string | undefined },
 ): { ok: true; rewrite: RewriteCliOk } | { ok: false; message: string } {
   const subcommand = options?.subcommand ?? 'rewrite';
-  const permissive = options?.permissive === true;
-  const resolvedVaultRoot = options?.vaultRoot;
-  let vaultState = createVaultDirFlagState();
   let mapPath: string | undefined;
+  const rewriteOutput = createRewriteOutputScanState();
 
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === undefined) {
-      continue;
-    }
-    const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
-    if (vaultApplied.kind === 'error') {
-      return { ok: false, message: vaultApplied.message };
-    }
-    if (vaultApplied.kind === 'handled') {
-      if (resolvedVaultRoot === undefined) {
-        vaultState = vaultApplied.state;
-      }
-      i = vaultApplied.nextIndex;
-      continue;
-    }
-    const mapApplied = applyPathFlag(a, args, i, cwd, 'map', './out/link-map.json');
-    if (mapApplied.kind === 'error') {
-      return { ok: false, message: mapApplied.message };
-    }
-    if (mapApplied.kind === 'handled') {
-      mapPath = mapApplied.path;
-      i = mapApplied.nextIndex;
-      continue;
-    }
-    if (permissive) {
-      continue;
-    }
-    if (a === '--dry-run' || a === '--in-place' || a === '--backup' || a.startsWith('--out-dir=')) {
-      continue;
-    }
-    if (a === '--out-dir') {
-      i++;
-      continue;
-    }
-    return { ok: false, message: unknownSubcommandFlagError(subcommand, a) };
+  const scanned = scanArgv(args, cwd, {
+    subcommand,
+    handlers: [
+      vaultDirArgHandler(),
+      pathFlagHandler('map', './out/link-map.json', (path) => {
+        mapPath = path;
+      }),
+      ...rewriteOutputModeArgHandlers(rewriteOutput),
+    ],
+  });
+  if (!scanned.ok) {
+    return scanned;
   }
 
-  if (!permissive && mapPath === undefined) {
+  if (mapPath === undefined) {
     return {
       ok: false,
       message:
@@ -82,7 +58,7 @@ export function parseRewriteArgs(
     };
   }
 
-  const modeParsed = parseRewriteOutputMode(args, cwd);
+  const modeParsed = finalizeRewriteOutputMode(rewriteOutput);
   if (!modeParsed.ok) {
     return modeParsed;
   }
@@ -90,8 +66,8 @@ export function parseRewriteArgs(
   return {
     ok: true,
     rewrite: {
-      vaultRoot: resolvedVaultRoot ?? resolveVaultRootFromState(vaultState, cwd),
-      mapPath: mapPath ?? '',
+      vaultRoot: resolveVaultRootFromState(scanned.vaultState, cwd),
+      mapPath,
       mode: modeParsed.mode,
       outDir: modeParsed.outDir,
       backup: modeParsed.backup,
