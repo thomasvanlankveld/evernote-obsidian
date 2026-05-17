@@ -5,6 +5,40 @@ import { parseRunArgs } from './runCommand.ts';
 describe('parseRunArgs', () => {
   const cwd = '/tmp/test-cwd';
 
+  it('requires --vault-dir', () => {
+    const parsed = parseRunArgs(['--db', './db'], cwd);
+    assert.equal(parsed.ok, false);
+    if (!parsed.ok) {
+      assert.match(parsed.message, /--vault-dir/);
+    }
+  });
+
+  it('requires --db, --snapshot, or --map', () => {
+    const parsed = parseRunArgs(['--vault-dir', './v'], cwd);
+    assert.equal(parsed.ok, false);
+    if (!parsed.ok) {
+      assert.match(parsed.message, /--db/);
+    }
+  });
+
+  it('accepts --db and --map without --snapshot', () => {
+    const parsed = parseRunArgs(['--vault-dir', './v', '--db', './db', '--map', './map.json'], cwd);
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      assert.equal(parsed.run.dbPath, `${cwd}/db`);
+      assert.equal(parsed.run.mapPath, `${cwd}/map.json`);
+      assert.equal(parsed.run.snapshotPath, undefined);
+    }
+  });
+
+  it('rejects unknown flags', () => {
+    const parsed = parseRunArgs(['--vault-dir', './v', '--db', './db', '--nope'], cwd);
+    assert.equal(parsed.ok, false);
+    if (!parsed.ok) {
+      assert.match(parsed.message, /unknown run flag/);
+    }
+  });
+
   it('sets snapshotOutPath and mapOutPath from --out', () => {
     const parsed = parseRunArgs(
       ['--vault-dir', './v', '--db', './db', '--out', './snap.json', '--map-out', './map.json'],
