@@ -51,7 +51,7 @@ export function parseLinkMapJson(text: string): LinkMapFile {
     if (typeof v !== 'string') {
       throw new LinkMapParseError(`guidToPath[${k}] must be a string`);
     }
-    norm[k.toLowerCase()] = v;
+    norm[normalizeEvernoteGuid(k)] = v;
   }
   return {
     version: 1,

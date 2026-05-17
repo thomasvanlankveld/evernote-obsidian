@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { relative } from 'node:path';
+import { normalizeEvernoteGuid } from '../evernote/noteRecord.ts';
 import { walkVaultMarkdownFiles } from './vaultIndex.ts';
 
 const UUID = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
@@ -46,10 +47,6 @@ function offsetToLineColumn(content: string, offset: number): { line: number; co
   return { line, column };
 }
 
-function normalizeGuid(g: string): string {
-  return g.toLowerCase();
-}
-
 /**
  * Extract a note GUID from `https://www.evernote.com/shard/…` or `evernote://…` URLs.
  * Returns null when the URL targets a note shape but no UUID is found.
@@ -93,27 +90,27 @@ function parseGuidFromPathAndQuery(fragment: string): string | null {
       fragment,
     );
   if (afterN?.[1]) {
-    return normalizeGuid(afterN[1]);
+    return normalizeEvernoteGuid(afterN[1]);
   }
   const afterSh =
     /\/sh\/[^/]+\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i.exec(
       fragment,
     );
   if (afterSh?.[1]) {
-    return normalizeGuid(afterSh[1]);
+    return normalizeEvernoteGuid(afterSh[1]);
   }
   const afterNl =
     /\/nl\/[^/]+\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/i.exec(
       fragment,
     );
   if (afterNl?.[1]) {
-    return normalizeGuid(afterNl[1]);
+    return normalizeEvernoteGuid(afterNl[1]);
   }
   const ms = [...fragment.matchAll(new RegExp(UUID, 'gi'))];
   const last = ms[ms.length - 1];
   const g = last?.[0];
   if (g !== undefined) {
-    return normalizeGuid(g);
+    return normalizeEvernoteGuid(g);
   }
   return null;
 }
