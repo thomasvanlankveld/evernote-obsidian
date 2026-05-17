@@ -95,9 +95,18 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         { cwd: work },
       );
       assert.equal(snapCode, 0, snapStreams.err());
+      assert.equal(snapStreams.err(), '');
       const snapSummary = JSON.parse(snapStreams.out()) as { ok: boolean; count: number };
       assert.equal(snapSummary.ok, true);
       assert.equal(snapSummary.count, 1);
+
+      const snap = JSON.parse(await readFile(snapshotPath, 'utf8')) as {
+        version: number;
+        notes: { guid: string; title: string }[];
+      };
+      assert.equal(snap.version, 1);
+      assert.equal(snap.notes[0]?.guid, TARGET_GUID);
+      assert.equal(snap.notes[0]?.title, 'Target Note');
 
       const corrStreams = makeStreams();
       const corrCode = await main(
@@ -106,6 +115,7 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         { cwd: work },
       );
       assert.equal(corrCode, 0, corrStreams.err());
+      assert.equal(corrStreams.err(), '');
       const corrSummary = JSON.parse(corrStreams.out()) as { ok: boolean; count: number };
       assert.equal(corrSummary.ok, true);
       assert.equal(corrSummary.count, 1);
@@ -122,6 +132,7 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         { cwd: work },
       );
       assert.equal(rewriteCode, 0, rewriteStreams.err());
+      assert.equal(rewriteStreams.err(), '');
       const rewriteSummary = JSON.parse(rewriteStreams.out()) as {
         filesChanged: number;
         replacements: number;
