@@ -15,7 +15,15 @@ import {
   runCorrelate,
 } from './correlateCommand.ts';
 import { runFixResources } from './fixResourcesCommand.ts';
+import {
+  type PipelineStepResult,
+  type StepInvokeContext,
+  type StepInvokeResult,
+  stepStatusFromExitCode,
+} from './pipelineStep.ts';
 import { type RewriteCliOk, runRewrite } from './rewriteCommand.ts';
+import { type RunOutputFlags, resolveRunOutput } from './runOutput.ts';
+import { emitRunReport, pipelineExitCode } from './runReport.ts';
 import { runSnapshot } from './snapshotCommand.ts';
 import { runUnescapeLinks } from './unescapeLinksCommand.ts';
 
@@ -33,6 +41,25 @@ export interface RunCliOk {
   correlateVerbose: boolean;
   skipUnescapeLinks: boolean;
   rewrite: Omit<RewriteCliOk, 'mapPath' | 'vaultRoot'>;
+  output: RunOutputFlags;
+}
+
+function stepFromResult(
+  id: PipelineStepResult['id'],
+  result: StepInvokeResult,
+  statusOverride?: PipelineStepResult['status'],
+): PipelineStepResult {
+  return {
+    id,
+    status: statusOverride ?? stepStatusFromExitCode(result.exitCode),
+    exitCode: result.exitCode,
+    summary: result.summary,
+    humanDetail: result.humanDetail,
+  };
+}
+
+function skippedStep(id: PipelineStepResult['id']): PipelineStepResult {
+  return { id, status: 'skipped', exitCode: 0 };
 }
 
 export function parseRunArgs(
@@ -52,6 +79,12 @@ export function parseRunArgs(
   const rewriteOutput = createRewriteOutputScanState();
   const correlateOutput: { reportPath?: string | undefined; verbose: boolean } = { verbose: false };
   let skipUnescapeLinks = false;
+  const output: RunOutputFlags = {
+    json: false,
+    jsonSteps: false,
+    quiet: false,
+    progress: false,
+  };
 
   const scanned = scanArgv(args, cwd, {
     subcommand: 'run',
@@ -59,6 +92,21 @@ export function parseRunArgs(
       vaultDirArgHandler(),
       exactFlagHandler('--skip-unescape-links', () => {
         skipUnescapeLinks = true;
+      }),
+      exactFlagHandler('--json', () => {
+        output.json = true;
+      }),
+      exactFlagHandler('--json-steps', () => {
+        output.jsonSteps = true;
+      }),
+      exactFlagHandler('--quiet', () => {
+        output.quiet = true;
+      }),
+      exactFlagHandler('-q', () => {
+        output.quiet = true;
+      }),
+      exactFlagHandler('--progress', () => {
+        output.progress = true;
       }),
       pathFlagHandler('db', './en_backup.db', (path) => {
         dbPath = path;
@@ -137,11 +185,29 @@ export function parseRunArgs(
         outDir: modeParsed.outDir,
         backup: modeParsed.backup,
       },
+      output,
     },
   };
 }
 
-export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<number> {
+export async function runRun(
+  parsed: RunCliOk,
+  streams: MainStreams,
+  options?: { cwd?: string | undefined },
+): Promise<number> {
+  const cwd = options?.cwd ?? process.cwd();
+  const resolvedOutput = resolveRunOutput(parsed.output, streams);
+  const quietSteps = resolvedOutput.mode !== 'json-steps';
+  const invokeBase: StepInvokeContext = {
+    quiet: quietSteps,
+    progress: resolvedOutput.progress,
+    onProgress: (line) => {
+      streams.stderr.write(line);
+    },
+  };
+
+  const steps: PipelineStepResult[] = [];
+
   if (
     parsed.dbPath !== undefined &&
     parsed.mapPath !== undefined &&
@@ -150,26 +216,32 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
     streams.stderr.write('run: warning: --map skips the snapshot step; --db is ignored\n');
   }
 
-  // --map (or an explicit --snapshot) skips generating a snapshot from --db.
   let snapshotPath = parsed.snapshotPath;
-  if (snapshotPath === undefined && parsed.mapPath === undefined) {
-    const code = await runSnapshot(
+  if (parsed.mapPath !== undefined) {
+    steps.push(skippedStep('snapshot'));
+  } else if (snapshotPath !== undefined) {
+    steps.push(skippedStep('snapshot'));
+  } else {
+    const result = await runSnapshot(
       {
         dbPath: parsed.dbPath as string,
         outPath: parsed.snapshotOutPath,
         maxRecords: parsed.maxRecords,
       },
       streams,
+      invokeBase,
     );
-    if (code !== 0) {
-      return code;
+    steps.push(stepFromResult('snapshot', result));
+    if (result.exitCode !== 0) {
+      emitRunReport(steps, streams, { ...resolvedOutput, cwd });
+      return pipelineExitCode(steps);
     }
     snapshotPath = parsed.snapshotOutPath;
   }
 
   let mapPath = parsed.mapPath;
   if (mapPath === undefined) {
-    const code = await runCorrelate(
+    const result = await runCorrelate(
       {
         vaultRoot: parsed.vaultRoot,
         snapshotPath,
@@ -180,15 +252,20 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
         verbose: parsed.correlateVerbose,
       },
       streams,
+      invokeBase,
     );
-    if (code !== 0) {
-      return code;
+    steps.push(stepFromResult('correlate', result));
+    if (result.exitCode !== 0) {
+      emitRunReport(steps, streams, { ...resolvedOutput, cwd });
+      return pipelineExitCode(steps);
     }
     mapPath = parsed.mapOutPath;
+  } else {
+    steps.push(skippedStep('correlate'));
   }
 
   if (!parsed.skipUnescapeLinks) {
-    const code = await runUnescapeLinks(
+    const result = await runUnescapeLinks(
       {
         vaultRoot: parsed.vaultRoot,
         mode: parsed.rewrite.mode,
@@ -197,10 +274,15 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
         onlyPrefixes: [],
       },
       streams,
+      invokeBase,
     );
-    if (code !== 0) {
-      return code;
+    steps.push(stepFromResult('unescape-links', result));
+    if (result.exitCode !== 0) {
+      emitRunReport(steps, streams, { ...resolvedOutput, cwd });
+      return pipelineExitCode(steps);
     }
+  } else {
+    steps.push(skippedStep('unescape-links'));
   }
 
   const overlayReadRoot =
@@ -208,7 +290,7 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
       ? parsed.rewrite.outDir
       : undefined;
 
-  const rewriteCode = await runRewrite(
+  const rewriteResult = await runRewrite(
     {
       vaultRoot: parsed.vaultRoot,
       mapPath,
@@ -218,12 +300,15 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
       overlayReadRoot,
     },
     streams,
+    invokeBase,
   );
-  if (rewriteCode !== 0) {
-    return rewriteCode;
+  steps.push(stepFromResult('rewrite', rewriteResult));
+  if (rewriteResult.exitCode !== 0) {
+    emitRunReport(steps, streams, { ...resolvedOutput, cwd });
+    return pipelineExitCode(steps);
   }
 
-  return runFixResources(
+  const fixResult = await runFixResources(
     {
       vaultRoot: parsed.vaultRoot,
       mode: parsed.rewrite.mode,
@@ -231,5 +316,10 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
       backup: parsed.rewrite.backup,
     },
     streams,
+    invokeBase,
   );
+  steps.push(stepFromResult('fix-resources', fixResult));
+
+  emitRunReport(steps, streams, { ...resolvedOutput, cwd });
+  return pipelineExitCode(steps);
 }

@@ -198,43 +198,31 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(runCode, 0, `run subcommand: ${runStreams.err()}`);
       assert.equal(runStreams.err(), '', 'run subcommand: stderr');
 
-      const summaries = parseJsonOutputs(runStreams.out());
-      assert.equal(summaries.length, 5, 'run subcommand: stdout JSON summary count');
-      const snapSummary = summaries[0] as { ok: boolean; count: number };
-      const corrSummary = summaries[1] as { ok: boolean; count: number };
-      const rewriteSummary = summaries[3] as {
-        mode: string;
-        filesChanged: number;
-        replacements: number;
-        wroteFiles: boolean;
+      const runReport = JSON.parse(runStreams.out()) as {
+        ok: boolean;
+        steps: {
+          id: string;
+          status: string;
+          summary?: { count?: number; mode?: string; filesChanged?: number; replacements?: number };
+        }[];
       };
-      const fixResourcesSummary = summaries[4] as {
-        mode: string;
-        filesChanged: number;
-        replacements: number;
-        wroteFiles: boolean;
-      };
-      assert.equal(snapSummary.ok, true, 'run subcommand: snapshot summary ok');
-      assert.equal(snapSummary.count, 1, 'run subcommand: snapshot count');
-      assert.equal(corrSummary.ok, true, 'run subcommand: correlate summary ok');
-      assert.equal(corrSummary.count, 1, 'run subcommand: correlate count');
-      assert.equal(rewriteSummary.mode, 'out-dir', 'run subcommand: rewrite mode');
-      assert.equal(rewriteSummary.wroteFiles, true, 'run subcommand: wroteFiles');
-      assert.equal(rewriteSummary.filesChanged, 1, 'run subcommand: filesChanged');
-      assert.equal(rewriteSummary.replacements, 1, 'run subcommand: replacements');
-      assert.equal(fixResourcesSummary.mode, 'out-dir', 'run subcommand: fix-resources mode');
+      assert.equal(runReport.ok, true, 'run subcommand: report ok');
+      assert.equal(runReport.steps.length, 5, 'run subcommand: step count');
+      assert.equal(runReport.steps[0]?.summary?.count, 1, 'run subcommand: snapshot count');
+      assert.equal(runReport.steps[1]?.summary?.count, 1, 'run subcommand: correlate count');
+      const rewriteSummary = runReport.steps[3]?.summary;
+      assert.equal(rewriteSummary?.mode, 'out-dir', 'run subcommand: rewrite mode');
+      assert.equal(rewriteSummary?.filesChanged, 1, 'run subcommand: filesChanged');
+      assert.equal(rewriteSummary?.replacements, 1, 'run subcommand: replacements');
+      const fixResourcesSummary = runReport.steps[4]?.summary;
+      assert.equal(fixResourcesSummary?.mode, 'out-dir', 'run subcommand: fix-resources mode');
       assert.equal(
-        fixResourcesSummary.wroteFiles,
-        true,
-        'run subcommand: fix-resources wroteFiles',
-      );
-      assert.equal(
-        fixResourcesSummary.filesChanged,
+        fixResourcesSummary?.filesChanged,
         1,
         'run subcommand: fix-resources filesChanged',
       );
       assert.equal(
-        fixResourcesSummary.replacements,
+        fixResourcesSummary?.replacements,
         1,
         'run subcommand: fix-resources replacements',
       );
@@ -278,13 +266,18 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(runCode, 0, `run uppercase guid: ${runStreams.err()}`);
       assert.equal(runStreams.err(), '', 'run uppercase guid: stderr');
 
-      const summaries = parseJsonOutputs(runStreams.out());
-      assert.equal(summaries.length, 5);
-      const rewriteSummary = summaries[3] as { replacements: number };
-      const fixResourcesSummary = summaries[4] as { replacements: number };
-      assert.equal(rewriteSummary.replacements, 1, 'run uppercase guid: replacements');
+      const runReport = JSON.parse(runStreams.out()) as {
+        ok: boolean;
+        steps: { summary?: { replacements?: number } }[];
+      };
+      assert.equal(runReport.ok, true);
       assert.equal(
-        fixResourcesSummary.replacements,
+        runReport.steps[3]?.summary?.replacements,
+        1,
+        'run uppercase guid: replacements',
+      );
+      assert.equal(
+        runReport.steps[4]?.summary?.replacements,
         1,
         'run uppercase guid: fix-resources replacements',
       );
@@ -327,11 +320,12 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       );
       assert.equal(runCode, 0, runStreams.err());
 
-      const summaries = parseJsonOutputs(runStreams.out());
-      assert.equal(summaries.length, 5);
-      const unescapeSummary = summaries[2] as { replacements: number; filesChanged: number };
-      assert.equal(unescapeSummary.replacements, 1);
-      assert.equal(unescapeSummary.filesChanged, 1);
+      const runReport = JSON.parse(runStreams.out()) as {
+        steps: { id: string; summary?: { replacements?: number; filesChanged?: number } }[];
+      };
+      const unescapeSummary = runReport.steps.find((s) => s.id === 'unescape-links')?.summary;
+      assert.equal(unescapeSummary?.replacements, 1);
+      assert.equal(unescapeSummary?.filesChanged, 1);
 
       const rewritten = await readFile(join(outVault, 'links.md'), 'utf8');
       assert.match(rewritten, /\[\[target note\.md\|My alias\]\]/);
@@ -340,6 +334,86 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         /^\* \[Stat block\]\(https:\/\/www\.dndbeyond\.com\/monsters\/example\)/m,
       );
       assert.doesNotMatch(rewritten, /\\\[Stat block\]/);
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('run --json-steps preserves per-step stdout JSON blobs', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'eo-pipeline-json-steps-'));
+    const vaultRoot = join(work, 'vault');
+    const dbPath = join(work, 'en.db');
+    const snapshotPath = join(work, 'out', 'evernote-notes.json');
+    const mapPath = join(work, 'out', 'link-map.json');
+    const outVault = join(work, 'out', 'rewritten-vault');
+
+    try {
+      createMinimalBackupDb(dbPath);
+      await seedPipelineVault(vaultRoot);
+
+      const runStreams = makeStreams();
+      const runCode = await main(
+        [
+          'run',
+          '--json-steps',
+          '--vault-dir',
+          vaultRoot,
+          '--db',
+          dbPath,
+          '--out',
+          snapshotPath,
+          '--map-out',
+          mapPath,
+          '--out-dir',
+          outVault,
+        ],
+        runStreams.streams,
+        { cwd: work },
+      );
+      assert.equal(runCode, 0, runStreams.err());
+
+      const summaries = parseJsonOutputs(runStreams.out());
+      assert.equal(summaries.length, 5, 'json-steps: stdout JSON summary count');
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('run on a TTY prints a human-readable summary on stdout', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'eo-pipeline-human-run-'));
+    const vaultRoot = join(work, 'vault');
+    const dbPath = join(work, 'en.db');
+    const snapshotPath = join(work, 'out', 'evernote-notes.json');
+    const mapPath = join(work, 'out', 'link-map.json');
+    const outVault = join(work, 'out', 'rewritten-vault');
+
+    try {
+      createMinimalBackupDb(dbPath);
+      await seedPipelineVault(vaultRoot);
+
+      const runStreams = makeStreams({ stdoutTty: true });
+      const runCode = await main(
+        [
+          'run',
+          '--vault-dir',
+          vaultRoot,
+          '--db',
+          dbPath,
+          '--out',
+          snapshotPath,
+          '--map-out',
+          mapPath,
+          '--out-dir',
+          outVault,
+        ],
+        runStreams.streams,
+        { cwd: work },
+      );
+      assert.equal(runCode, 0, runStreams.err());
+      assert.match(runStreams.out(), /evernote-obsidian run/);
+      assert.match(runStreams.out(), /✓ snapshot/);
+      assert.match(runStreams.out(), /Run succeeded\./);
+      assert.equal(parseJsonOutputs(runStreams.out()).length, 0, 'human run: no stdout JSON');
     } finally {
       await rm(work, { recursive: true, force: true });
     }

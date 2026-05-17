@@ -86,6 +86,27 @@ describe('parseRunArgs', () => {
     }
   });
 
+  it('parses run output flags', () => {
+    const parsed = parseRunArgs(
+      ['--vault-dir', './v', '--db', './db', '--json', '--quiet', '--progress'],
+      cwd,
+    );
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      assert.equal(parsed.run.output.json, true);
+      assert.equal(parsed.run.output.quiet, true);
+      assert.equal(parsed.run.output.progress, true);
+    }
+  });
+
+  it('parses --json-steps', () => {
+    const parsed = parseRunArgs(['--vault-dir', './v', '--db', './db', '--json-steps'], cwd);
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      assert.equal(parsed.run.output.jsonSteps, true);
+    }
+  });
+
   it('lets --out override mapOutPath when it appears after --map-out', () => {
     const parsed = parseRunArgs(
       ['--vault-dir', './v', '--db', './db', '--map-out', './map.json', '--out', './both.json'],

@@ -24,13 +24,15 @@ describe('fixResourcesCommand', () => {
 
   it('dry-run lists file and line changes without writing', async () => {
     const { streams, out, err } = makeStreams();
-    const code = await runFixResources(
-      {
-        vaultRoot: resourcesFixtureVault,
-        mode: 'dry-run',
-      },
-      streams,
-    );
+    const code = (
+      await runFixResources(
+        {
+          vaultRoot: resourcesFixtureVault,
+          mode: 'dry-run',
+        },
+        streams,
+      )
+    ).exitCode;
     assert.equal(code, 0);
     assert.equal(err(), '');
     const j = JSON.parse(out()) as {
@@ -65,7 +67,8 @@ describe('fixResourcesCommand', () => {
     );
     try {
       const { streams, out } = makeStreams();
-      const code = await runFixResources({ vaultRoot: dir, mode: 'out-dir', outDir }, streams);
+      const code = (await runFixResources({ vaultRoot: dir, mode: 'out-dir', outDir }, streams))
+        .exitCode;
       assert.equal(code, 0);
       const j = JSON.parse(out()) as { replacements: number };
       assert.equal(j.replacements, 1);
@@ -84,7 +87,7 @@ describe('fixResourcesCommand', () => {
     await writeFile(note, original, 'utf8');
     try {
       const { streams, out } = makeStreams();
-      const code = await runFixResources({ vaultRoot: dir, mode: 'in-place' }, streams);
+      const code = (await runFixResources({ vaultRoot: dir, mode: 'in-place' }, streams)).exitCode;
       assert.equal(code, 0);
       const j = JSON.parse(out()) as { wroteFiles: boolean; replacements: number };
       assert.equal(j.wroteFiles, true);

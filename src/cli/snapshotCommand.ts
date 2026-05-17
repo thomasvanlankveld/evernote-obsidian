@@ -4,6 +4,7 @@ import { readNoteRecordsFromEvernoteBackupDb } from '../evernote/readEvernoteBac
 import { buildSnapshotEnvelope, writeSnapshotFile } from '../evernote/snapshotFile.ts';
 import { pathFlagHandler, positiveIntFlagHandler, scanArgv } from './argvScan.ts';
 import type { MainStreams } from './cliTypes.ts';
+import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
 
 const SNAPSHOT_METADATA_HOST = 'evernote-backup';
 
@@ -63,12 +64,17 @@ export function parseSnapshotArgs(
   return { ok: true, snapshot: { dbPath, outPath, inputSnapshotPath, maxRecords } };
 }
 
-export async function runSnapshot(parsed: SnapshotCliOk, streams: MainStreams): Promise<number> {
+export async function runSnapshot(
+  parsed: SnapshotCliOk,
+  streams: MainStreams,
+  invoke?: StepInvokeContext,
+): Promise<StepInvokeResult> {
   if (parsed.dbPath === undefined) {
     streams.stderr.write('snapshot: missing --db path\n');
-    return 2;
+    return { exitCode: 2 };
   }
   try {
+    emitStepProgress(invoke, 'snapshot: reading evernote-backup DB…');
     const readOpts =
       parsed.maxRecords !== undefined ? { maxRecords: parsed.maxRecords } : undefined;
     const { records, sourceRowCount } = readNoteRecordsFromEvernoteBackupDb(
@@ -79,6 +85,7 @@ export async function runSnapshot(parsed: SnapshotCliOk, streams: MainStreams): 
     const envelope = buildSnapshotEnvelope(SNAPSHOT_METADATA_HOST, records);
     await mkdir(dirname(parsed.outPath), { recursive: true });
     await writeSnapshotFile(parsed.outPath, envelope);
+    emitStepProgress(invoke, `snapshot: wrote ${records.length} notes`);
 
     const summary: Record<string, unknown> = {
       ok: true,
@@ -92,14 +99,16 @@ export async function runSnapshot(parsed: SnapshotCliOk, streams: MainStreams): 
       summary.truncated = true;
     }
 
-    streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-    return 0;
+    if (invoke?.quiet !== true) {
+      streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    }
+    return { exitCode: 0, summary };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     streams.stderr.write(`snapshot: ${msg}\n`);
     streams.stderr.write(
       'snapshot: hint: pass --db to your evernote-backup database (see https://github.com/vzhd1701/evernote-backup).\n',
     );
-    return 2;
+    return { exitCode: 2 };
   }
 }

@@ -146,6 +146,8 @@ export interface CorrelateFailureOutputOptions {
   reportPathDisplay: string;
   snapshotNotes: number;
   verbose: boolean;
+  /** When true, only write the report file (no stderr hint/JSON). */
+  quiet?: boolean | undefined;
 }
 
 export async function emitCorrelateFailure(
@@ -154,13 +156,18 @@ export async function emitCorrelateFailure(
   options: CorrelateFailureOutputOptions,
 ): Promise<void> {
   await writeCorrelationFailureReport(options.reportPath, report);
+  if (options.quiet === true && !options.verbose) {
+    return;
+  }
   const summary = buildCorrelationFailureSummary(
     report,
     options.reportPathDisplay,
     options.snapshotNotes,
   );
   streams.stderr.write(formatCorrelationFailureHint(summary));
-  streams.stderr.write(`${JSON.stringify(summary, null, 2)}\n`);
+  if (!options.quiet) {
+    streams.stderr.write(`${JSON.stringify(summary, null, 2)}\n`);
+  }
   if (options.verbose) {
     streams.stderr.write(`${JSON.stringify(report, null, 2)}\n`);
   }

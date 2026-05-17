@@ -12,6 +12,7 @@ import {
 } from './argvScan.ts';
 import { createRewriteOutputScanState, finalizeRewriteOutputMode } from './cliFlags.ts';
 import type { MainStreams } from './cliTypes.ts';
+import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
 import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 const MAX_DRY_RUN_SAMPLES = 25;
@@ -122,8 +123,10 @@ export function parseUnescapeLinksArgs(
 export async function runUnescapeLinks(
   parsed: UnescapeLinksCliOk,
   streams: MainStreams,
-): Promise<number> {
+  invoke?: StepInvokeContext,
+): Promise<StepInvokeResult> {
   try {
+    emitStepProgress(invoke, 'unescape-links: scanning vault…');
     const files = await walkVaultMarkdownFiles(parsed.vaultRoot);
     let filesScanned = 0;
     let filesChanged = 0;
@@ -169,7 +172,7 @@ export async function runUnescapeLinks(
         const outRoot = parsed.outDir;
         if (outRoot === undefined || outRoot === '') {
           streams.stderr.write('unescape-links: --out-dir requires a non-empty path\n');
-          return 2;
+          return { exitCode: 2 };
         }
         const dest = join(outRoot, rel);
         await mkdir(dirname(dest), { recursive: true });
@@ -184,31 +187,32 @@ export async function runUnescapeLinks(
       await atomicReplaceFile(abs, result.content);
     }
 
-    streams.stdout.write(
-      `${JSON.stringify(
-        {
-          ok: true,
-          mode: parsed.mode,
-          vault: parsed.vaultRoot,
-          only: parsed.onlyPrefixes.length > 0 ? parsed.onlyPrefixes : undefined,
-          filesScanned,
-          filesChanged,
-          replacements,
-          wroteFiles: parsed.mode !== 'dry-run',
-          ...(parsed.mode === 'dry-run' && samples.length > 0 ? { samples } : {}),
-        },
-        null,
-        2,
-      )}\n`,
+    const summary = {
+      ok: true,
+      mode: parsed.mode,
+      vault: parsed.vaultRoot,
+      only: parsed.onlyPrefixes.length > 0 ? parsed.onlyPrefixes : undefined,
+      filesScanned,
+      filesChanged,
+      replacements,
+      wroteFiles: parsed.mode !== 'dry-run',
+      ...(parsed.mode === 'dry-run' && samples.length > 0 ? { samples } : {}),
+    };
+    emitStepProgress(
+      invoke,
+      `unescape-links: ${filesChanged} file${filesChanged === 1 ? '' : 's'} changed, ${replacements} replacement${replacements === 1 ? '' : 's'}`,
     );
-    return 0;
+    if (invoke?.quiet !== true) {
+      streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    }
+    return { exitCode: 0, summary };
   } catch (e) {
     if (e instanceof VaultIndexRootError) {
       streams.stderr.write(`${e.message}\n`);
-      return 2;
+      return { exitCode: 2 };
     }
     const msg = e instanceof Error ? e.message : String(e);
     streams.stderr.write(`unescape-links: ${msg}\n`);
-    return 2;
+    return { exitCode: 2 };
   }
 }

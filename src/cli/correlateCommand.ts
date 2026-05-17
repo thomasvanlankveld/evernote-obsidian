@@ -17,10 +17,14 @@ import {
 } from './argvScan.ts';
 import type { MainStreams } from './cliTypes.ts';
 import {
+  buildCorrelationFailureSummary,
   correlationFailureFromCorrelateResult,
   correlationFailureFromVaultIndex,
   emitCorrelateFailure,
+  formatCorrelationFailureHint,
 } from './correlateFailureReport.ts';
+import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
+import { correlationHintForRun } from './runReport.ts';
 import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 export interface CorrelateCliOk {
@@ -133,25 +137,33 @@ export function parseCorrelateArgs(
   };
 }
 
-export async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promise<number> {
+export async function runCorrelate(
+  parsed: CorrelateCliOk,
+  streams: MainStreams,
+  invoke?: StepInvokeContext,
+): Promise<StepInvokeResult> {
   if (parsed.snapshotPath === undefined) {
     streams.stderr.write('correlate: missing --snapshot path\n');
-    return 2;
+    return { exitCode: 2 };
   }
   try {
+    emitStepProgress(invoke, 'correlate: indexing vault…');
     const index = await buildVaultIndex(parsed.vaultRoot);
     if (!index.ok) {
-      await emitCorrelateFailure(
-        streams,
-        correlationFailureFromVaultIndex(index.collisions, index.guidCollisions),
-        {
-          reportPath: parsed.reportPath,
-          reportPathDisplay: parsed.reportPathDisplay,
-          snapshotNotes: 0,
-          verbose: parsed.verbose,
-        },
-      );
-      return 1;
+      const report = correlationFailureFromVaultIndex(index.collisions, index.guidCollisions);
+      await emitCorrelateFailure(streams, report, {
+        reportPath: parsed.reportPath,
+        reportPathDisplay: parsed.reportPathDisplay,
+        snapshotNotes: 0,
+        verbose: parsed.verbose,
+        quiet: invoke?.quiet,
+      });
+      const failureSummary = buildCorrelationFailureSummary(report, parsed.reportPathDisplay, 0);
+      return {
+        exitCode: 1,
+        summary: failureSummary as unknown as Record<string, unknown>,
+        humanDetail: correlationHintForRun(formatCorrelationFailureHint(failureSummary)),
+      };
     }
 
     const snapshot = await readSnapshotFile(parsed.snapshotPath);
@@ -173,15 +185,27 @@ export async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams)
       index.byEvernoteGuid,
       pathToEvernoteGuid,
     );
+    emitStepProgress(invoke, 'correlate: matching notes…');
     const result = correlateSnapshotToGuidPaths(snapshot.notes, vaultInput, overrides);
     if (!result.ok) {
-      await emitCorrelateFailure(streams, correlationFailureFromCorrelateResult(result), {
+      const report = correlationFailureFromCorrelateResult(result);
+      await emitCorrelateFailure(streams, report, {
         reportPath: parsed.reportPath,
         reportPathDisplay: parsed.reportPathDisplay,
         snapshotNotes: snapshot.notes.length,
         verbose: parsed.verbose,
+        quiet: invoke?.quiet,
       });
-      return 1;
+      const failureSummary = buildCorrelationFailureSummary(
+        report,
+        parsed.reportPathDisplay,
+        snapshot.notes.length,
+      );
+      return {
+        exitCode: 1,
+        summary: failureSummary as unknown as Record<string, unknown>,
+        humanDetail: correlationHintForRun(formatCorrelationFailureHint(failureSummary)),
+      };
     }
 
     const linkMap = buildLinkMapFile(
@@ -200,15 +224,17 @@ export async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams)
       snapshot: parsed.snapshotPath,
       count: result.guidToPath.size,
     };
-    streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-    return 0;
+    if (invoke?.quiet !== true) {
+      streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    }
+    return { exitCode: 0, summary };
   } catch (e) {
     if (e instanceof VaultIndexRootError) {
       streams.stderr.write(`${e.message}\n`);
-      return 2;
+      return { exitCode: 2 };
     }
     const msg = e instanceof Error ? e.message : String(e);
     streams.stderr.write(`correlate: ${msg}\n`);
-    return 2;
+    return { exitCode: 2 };
   }
 }
