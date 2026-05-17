@@ -218,6 +218,16 @@ describe('cli main', () => {
     assert.match(err(), /unknown correlate flag/);
   });
 
+  it('correlate exits 2 when --map is passed', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(
+      ['correlate', '--snapshot', '/tmp/x.json', '--map', '/tmp/link-map.json'],
+      streams,
+    );
+    assert.equal(code, 2);
+    assert.match(err(), /correlate does not accept --map/);
+  });
+
   it('correlate exits 0 and writes link-map.json', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-correlate-cli-'));
     const snapPath = join(dir, 'evernote-notes.json');
@@ -497,6 +507,38 @@ describe('cli main', () => {
       assert.equal(summaries.length, 2);
       const corrSummary = summaries[0] as { ok: boolean };
       assert.equal(corrSummary.ok, true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run warns when --db and --map are both set without --snapshot', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-db-map-warn-'));
+    const mapPath = join(dir, 'link-map.json');
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: linksFixtureDir,
+      snapshotPath: '/x',
+      guidToPath: {
+        'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee': 'other.md',
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': 'b.md',
+        'cccccccc-cccc-cccc-cccc-cccccccccccc': 'c.md',
+      },
+    };
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['run', '--vault-dir', linksFixtureDir, '--map', mapPath, '--db', join(dir, 'unused.db')],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.match(err(), /--map skips the snapshot step/);
+      assert.match(err(), /--db is ignored/);
+      const summaries = parseJsonOutputs(out());
+      assert.equal(summaries.length, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

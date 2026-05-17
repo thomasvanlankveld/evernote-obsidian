@@ -82,6 +82,15 @@ export function parseRunArgs(
 }
 
 export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<number> {
+  if (
+    parsed.dbPath !== undefined &&
+    parsed.mapPath !== undefined &&
+    parsed.snapshotPath === undefined
+  ) {
+    streams.stderr.write('run: warning: --map skips the snapshot step; --db is ignored\n');
+  }
+
+  // --map (or an explicit --snapshot) skips generating a snapshot from --db.
   let snapshotPath = parsed.snapshotPath;
   if (snapshotPath === undefined && parsed.mapPath === undefined) {
     const code = await runSnapshot(

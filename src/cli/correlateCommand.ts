@@ -21,7 +21,7 @@ export interface CorrelateCliOk {
   snapshotPath?: string | undefined;
   overridesPath?: string | undefined;
   outPath: string;
-  /** Reuse an existing link map instead of correlating. */
+  /** Set by run when --map skips correlate; not used by standalone correlate. */
   existingMapPath?: string | undefined;
 }
 
@@ -109,6 +109,14 @@ export function parseCorrelateArgs(
       continue;
     }
     return { ok: false, message: unknownSubcommandFlagError(subcommand, a) };
+  }
+
+  if (!permissive && mapPath !== undefined) {
+    return {
+      ok: false,
+      message:
+        'error: correlate does not accept --map (use evernote-obsidian run --map to reuse an existing link map)',
+    };
   }
 
   if (!permissive && snapshotPath === undefined) {
