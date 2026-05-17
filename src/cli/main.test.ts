@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -392,6 +392,42 @@ describe('cli main', () => {
       assert.equal(summary.wroteFiles, false);
       assert.ok(summary.filesChanged >= 1);
       assert.ok(summary.replacements >= 3);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rewrite --in-place overwrites vault markdown', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-rewrite-inplace-'));
+    const vaultDir = join(dir, 'vault');
+    await cp(linksFixtureDir, vaultDir, { recursive: true });
+    const mapPath = join(dir, 'link-map.json');
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: vaultDir,
+      snapshotPath: '/x',
+      guidToPath: {
+        'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee': 'other.md',
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb': 'b.md',
+        'cccccccc-cccc-cccc-cccc-cccccccccccc': 'c.md',
+      },
+    };
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['rewrite', '--vault-dir', vaultDir, '--map', mapPath, '--in-place'],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summary = JSON.parse(out()) as { mode: string; wroteFiles: boolean };
+      assert.equal(summary.mode, 'in-place');
+      assert.equal(summary.wroteFiles, true);
+      const mixed = await readFile(join(vaultDir, 'mixed.md'), 'utf8');
+      assert.match(mixed, /\[\[other\.md\|My note alias\]\]/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

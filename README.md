@@ -65,7 +65,7 @@ Optional: **`index`** (preflight title uniqueness), **`links`** (report remainin
 
 - **`evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]`** — Scan Markdown under **`--vault-dir`** for **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` links for reporting). Default is JSON on stdout; **`--out`** writes a report file.
 
-- **`evernote-obsidian rewrite --map <path> [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Replace Evernote **note** URLs with **`[[path|alias]]`** wikilinks (paths relative to **`--vault-dir`**) using **`link-map.json`** from `correlate`. With no output mode flag, **`--dry-run`** is implied: counts changes without writing. **`--out-dir`** writes a mirror of the tree under **`--vault-dir`** containing only files that changed. **`--in-place`** overwrites those Markdown files; add **`--backup`** to write **`<file>.evernote-obsidian.bak`** before each overwrite.
+- **`evernote-obsidian rewrite --map <path> [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Replace Evernote **note** URLs with **`[[path|alias]]`** wikilinks (paths relative to **`--vault-dir`**) using **`link-map.json`** from `correlate`. With no output mode flag, **`--dry-run`** is implied: counts changes without writing. **`--out-dir`** writes a mirror of the tree under **`--vault-dir`** containing only files that changed. **`--in-place`** overwrites those Markdown files via a same-directory temp file and atomic **`rename`**; add **`--backup`** to write **`<file>.evernote-obsidian.bak`** (pre-rewrite content) before each replace.
 
 Create the database with upstream’s **`evernote-backup init-db`** / **`sync`** (their README covers OAuth and Yinxiang). Then point **`--db`** at that file (often `en_backup.db`).
 
@@ -93,7 +93,7 @@ These boundaries are intentional for an early, personal tool.
 
 - Never commit a backup **`.db`** file, GitHub tokens, or `.enex` exports that contain private notes unless this repo is strictly private and you accept the risk.
 - **`link-map.json`**, broken-link reports, and **`*.evernote-obsidian.bak`** files can embed **absolute paths** to your vault or home directory. Treat them like secrets if paths are sensitive, and scrub before sharing logs or opening issues upstream.
-- **`rewrite --in-place`** changes your real Markdown; prefer **`--dry-run`** first, then **`--out-dir`** on a copy, and only use **`--in-place --backup`** when you are satisfied with the diff. OAuth tokens for **evernote-backup** live outside this repo; follow upstream guidance on where those credentials are stored.
+- **`rewrite --in-place`** changes your real Markdown; prefer **`--dry-run`** first, then **`--out-dir`** on a copy, and only use **`--in-place --backup`** when you are satisfied with the diff. In-place writes use a same-directory temp file and **`rename`** so a crash mid-write should not leave a torn note file on a normal local disk; **NFS, some cloud sync mounts, and network folders** may not offer the same guarantees. OAuth tokens for **evernote-backup** live outside this repo; follow upstream guidance on where those credentials are stored.
 
 ## Contributing
 

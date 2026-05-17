@@ -102,6 +102,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 
 - [x] CLI: **`--vault`** (default `./data`), **`--map`**, **`--dry-run`**, **`--out-dir`** vs **`--in-place`** (with optional **`--backup`**).
 - [x] Replace Evernote **note** URLs with **`[[path|alias]]`** (vault-relative path + captured alias); preserve surrounding Markdown where possible.
+- [x] **`--in-place`:** same-directory temp file + **`fsync`** + **`rename`** (atomic replace on typical local disks; not guaranteed on all network/sync mounts).
 
 ### Phase 7 — Hardening
 
@@ -118,6 +119,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 | Stale backup vs Obsidian import                    | Re-run `evernote-backup sync` before `snapshot`; document refresh cadence |
 | evernote-backup DB format drift                    | Fail fast on missing `notes` table; pin upstream schema in tests / README     |
 | Wrong rewrites                             | Dry-run default; golden tests; backup before in-place                |
+| Torn in-place write on crash               | Temp file + atomic rename; backup for logical rollback               |
 
 ## 7. References
 
