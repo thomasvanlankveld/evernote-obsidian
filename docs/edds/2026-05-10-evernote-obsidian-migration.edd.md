@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-14 (Phase 7: hardening; golden tests, README)
+**Last updated:** 2026-05-17 (vault walk: skip `.obsidian` and `.trash`)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -56,7 +56,7 @@ This project adds automation: **correlate Evernote note identity → vault file*
 - **Empty normalized title** (e.g. filename stem trims to nothing): **invalid**; index fails with the same collision-shaped report shape (`normalizedTitle: ""`).
 - **Symlinks:** **symlinked directories are not recursed** (avoids cycles); a regular file that is a symlink is still indexed. Layouts that rely on symlinked folders for notes are unsupported in v1.
 - **CLI:** `--vault` requires a path when the flag is present; other I/O errors surface as **exit 2** and a short message (not only missing root).
-- **Tooling noise:** only `.git` and `node_modules` are skipped by name; e.g. **`.obsidian`** may contribute Markdown — add an ignore list later if that hurts real vaults.
+- **Skipped directories (by name):** `.git`, `node_modules`, `.obsidian`, `.trash` — not recursed; symlinked directories still not followed.
 
 **Deliverable:** `buildVaultIndex(root)` + fixture tests. ✅
 
