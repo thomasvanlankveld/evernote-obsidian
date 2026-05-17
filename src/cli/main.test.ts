@@ -279,7 +279,8 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 0);
-      assert.equal(err(), '');
+      assert.match(err(), /Vault: 3 markdown files/);
+      assert.match(err(), /Evernote: 3 notes in snapshot/);
       const summary = JSON.parse(out()) as { ok: boolean; count: number; path: string };
       assert.equal(summary.ok, true);
       assert.equal(summary.count, 3);
@@ -448,7 +449,8 @@ describe('cli main', () => {
       assert.equal(code, 1);
       assert.equal(out(), '');
       const stderr = err();
-      assert.match(stderr, /1 snapshot note, 1 unmatched/);
+      assert.match(stderr, /1 Evernote note.*1 unmatched/);
+      assert.match(stderr, /Next steps:/);
       assert.match(stderr, /correlate-report\.json/);
       const stderrObjects = parseJsonOutputs(stderr) as {
         ok: boolean;
@@ -694,7 +696,8 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 0);
-      assert.equal(err(), '');
+      assert.match(err(), /Vault: 3 markdown files/);
+      assert.match(err(), /Evernote: 3 notes in snapshot/);
 
       const report = JSON.parse(out()) as {
         ok: boolean;
@@ -750,7 +753,8 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 0);
-      assert.equal(err(), '');
+      assert.match(err(), /Vault: 3 markdown files/);
+      assert.match(err(), /Evernote: 1 note in snapshot/);
       const report = JSON.parse(out()) as {
         ok: boolean;
         steps: { id: string; status: string; summary?: { ok?: boolean } }[];
@@ -928,7 +932,7 @@ describe('cli main', () => {
       assert.equal(report.ok, false);
       assert.equal(report.failedStep, 'correlate');
       const correlateStep = report.steps.find((s) => s.id === 'correlate');
-      assert.match(correlateStep?.humanDetail ?? '', /1 unmatched/);
+      assert.match(correlateStep?.humanDetail ?? '', /Evernote note.*unmatched/);
       assert.equal(correlateStep?.summary?.reason, 'correlation_failed');
       assert.equal(correlateStep?.summary?.counts?.unmatched, 1);
       assert.match(err(), /Run failed at correlate/);
@@ -965,9 +969,9 @@ describe('cli main', () => {
       assert.equal(code, 1);
       assert.equal(parseJsonOutputs(out()).length, 0, 'TTY run failure: no stdout JSON');
       assert.match(err(), /evernote-obsidian run/);
-      assert.match(err(), /✗ correlate/);
-      assert.match(err(), /1 unmatched/);
-      assert.match(err(), /see .*correlate-report\.json/);
+      assert.match(err(), /✗ correlate \(vault matching\)/);
+      assert.match(err(), /Evernote note.*unmatched/);
+      assert.match(err(), /details: .*correlate-report\.json/);
       assert.match(err(), /Run failed at correlate/);
       assert.doesNotMatch(err(), /"ok":\s*false/, 'no duplicate correlate failure JSON on stderr');
       const correlateReportFile = JSON.parse(await readFile(reportPath, 'utf8')) as {

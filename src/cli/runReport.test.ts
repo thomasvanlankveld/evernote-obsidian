@@ -10,7 +10,12 @@ describe('runReport', () => {
         id: 'snapshot',
         status: 'ok',
         exitCode: 0,
-        summary: { ok: true, count: 2, path: '/work/out/evernote-notes.json' },
+        summary: {
+          ok: true,
+          count: 2,
+          path: '/work/out/evernote-notes.json',
+          db: '/work/en_backup.db',
+        },
       },
       {
         id: 'correlate',
@@ -20,15 +25,15 @@ describe('runReport', () => {
           ok: false,
           reportPath: './out/correlate-report.json',
         },
-        humanDetail: '2 unmatched',
+        humanDetail: '2 Evernote notes → vault: 0 matched, 2 unmatched',
       },
     ];
     const text = formatHumanReport(okSteps, '/work');
-    assert.match(text, /✓ snapshot/);
-    assert.match(text, /2 notes → \.\/out\/evernote-notes\.json/);
-    assert.match(text, /✗ correlate/);
-    assert.match(text, /2 unmatched/);
-    assert.match(text, /see \.\/out\/correlate-report\.json/);
+    assert.match(text, /✓ snapshot \(Evernote export\)/);
+    assert.match(text, /2 notes from Evernote DB \(en_backup\.db\)/);
+    assert.match(text, /✗ correlate \(vault matching\)/);
+    assert.match(text, /2 Evernote notes → vault: 0 matched, 2 unmatched/);
+    assert.match(text, /details: \.\/out\/correlate-report\.json/);
     assert.match(text, /Run failed at correlate/);
     assert.equal(pipelineOk(okSteps), false);
   });

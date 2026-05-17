@@ -18,13 +18,15 @@ import {
 import type { MainStreams } from './cliTypes.ts';
 import {
   buildCorrelationFailureSummary,
+  type CorrelationVaultContext,
   correlationFailureFromCorrelateResult,
   correlationFailureFromVaultIndex,
-  correlationHintForRun,
   emitCorrelateFailure,
-  formatCorrelationFailureHint,
+  formatCorrelateRunDetail,
+  formatVaultCorrelateContext,
 } from './correlateFailureReport.ts';
 import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
+import { isStdoutTty } from './runOutput.ts';
 import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 export interface CorrelateCliOk {
@@ -46,6 +48,18 @@ export function reportPathForDisplay(absPath: string, cwd: string): string {
     return absPath;
   }
   return rel.startsWith('.') ? rel : `./${rel}`;
+}
+
+function vaultContextFromIndex(
+  entries: readonly { evernoteGuid?: string | undefined }[],
+): CorrelationVaultContext {
+  let vaultWithGuidCount = 0;
+  for (const e of entries) {
+    if (e.evernoteGuid !== undefined) {
+      vaultWithGuidCount++;
+    }
+  }
+  return { vaultMarkdownCount: entries.length, vaultWithGuidCount };
 }
 
 export function correlateOutputArgHandlers(state: {
@@ -137,6 +151,36 @@ export function parseCorrelateArgs(
   };
 }
 
+function correlateFailureOptions(
+  parsed: CorrelateCliOk,
+  invoke: StepInvokeContext | undefined,
+  streams: MainStreams,
+  options: {
+    snapshotNotes: number;
+    vault?: CorrelationVaultContext;
+    matchedCount?: number;
+  },
+) {
+  const cwd = invoke?.cwd ?? process.cwd();
+  const interactive =
+    invoke?.interactive === true || (invoke === undefined && isStdoutTty(streams));
+  return {
+    reportPath: parsed.reportPath,
+    reportPathDisplay: parsed.reportPathDisplay,
+    snapshotNotes: options.snapshotNotes,
+    matchedCount: options.matchedCount,
+    vault: options.vault,
+    snapshotPath:
+      parsed.snapshotPath !== undefined
+        ? reportPathForDisplay(parsed.snapshotPath, cwd)
+        : undefined,
+    vaultDir: reportPathForDisplay(parsed.vaultRoot, cwd),
+    verbose: parsed.verbose,
+    quiet: invoke?.quiet,
+    interactive,
+  };
+}
+
 export async function runCorrelate(
   parsed: CorrelateCliOk,
   streams: MainStreams,
@@ -146,27 +190,36 @@ export async function runCorrelate(
     streams.stderr.write('correlate: missing --snapshot path\n');
     return { exitCode: 2 };
   }
+  const cwd = invoke?.cwd ?? process.cwd();
+  const vaultDisplay = reportPathForDisplay(parsed.vaultRoot, cwd);
   try {
-    emitStepProgress(invoke, 'correlate: indexing vault…');
+    emitStepProgress(invoke, `correlate: scanning vault (${vaultDisplay})…`);
     const index = await buildVaultIndex(parsed.vaultRoot);
+    const vaultCtx = vaultContextFromIndex(index.ok ? index.entries : []);
     if (!index.ok) {
       const report = correlationFailureFromVaultIndex(index.collisions, index.guidCollisions);
-      await emitCorrelateFailure(streams, report, {
-        reportPath: parsed.reportPath,
-        reportPathDisplay: parsed.reportPathDisplay,
-        snapshotNotes: 0,
-        verbose: parsed.verbose,
-        quiet: invoke?.quiet,
+      if (vaultCtx.vaultMarkdownCount > 0) {
+        streams.stderr.write(formatVaultCorrelateContext(vaultDisplay, vaultCtx, 0));
+      }
+      await emitCorrelateFailure(
+        streams,
+        report,
+        correlateFailureOptions(parsed, invoke, streams, { snapshotNotes: 0, vault: vaultCtx }),
+      );
+      const failureSummary = buildCorrelationFailureSummary(report, parsed.reportPathDisplay, 0, {
+        vault: vaultCtx,
       });
-      const failureSummary = buildCorrelationFailureSummary(report, parsed.reportPathDisplay, 0);
       return {
         exitCode: 1,
         summary: failureSummary as unknown as Record<string, unknown>,
-        humanDetail: correlationHintForRun(formatCorrelationFailureHint(failureSummary)),
+        humanDetail: formatCorrelateRunDetail(failureSummary),
       };
     }
 
     const snapshot = await readSnapshotFile(parsed.snapshotPath);
+    streams.stderr.write(
+      formatVaultCorrelateContext(vaultDisplay, vaultCtx, snapshot.notes.length),
+    );
     let overrides = new Map<string, string>();
     if (parsed.overridesPath !== undefined) {
       const raw = await readFile(parsed.overridesPath, 'utf8');
@@ -185,26 +238,32 @@ export async function runCorrelate(
       index.byEvernoteGuid,
       pathToEvernoteGuid,
     );
-    emitStepProgress(invoke, 'correlate: matching notes…');
+    emitStepProgress(
+      invoke,
+      `correlate: matching ${snapshot.notes.length} Evernote note${snapshot.notes.length === 1 ? '' : 's'} to vault files…`,
+    );
     const result = correlateSnapshotToGuidPaths(snapshot.notes, vaultInput, overrides);
     if (!result.ok) {
       const report = correlationFailureFromCorrelateResult(result);
-      await emitCorrelateFailure(streams, report, {
-        reportPath: parsed.reportPath,
-        reportPathDisplay: parsed.reportPathDisplay,
-        snapshotNotes: snapshot.notes.length,
-        verbose: parsed.verbose,
-        quiet: invoke?.quiet,
-      });
+      await emitCorrelateFailure(
+        streams,
+        report,
+        correlateFailureOptions(parsed, invoke, streams, {
+          snapshotNotes: snapshot.notes.length,
+          vault: vaultCtx,
+          matchedCount: result.matchedCount,
+        }),
+      );
       const failureSummary = buildCorrelationFailureSummary(
         report,
         parsed.reportPathDisplay,
         snapshot.notes.length,
+        { matchedCount: result.matchedCount, vault: vaultCtx },
       );
       return {
         exitCode: 1,
         summary: failureSummary as unknown as Record<string, unknown>,
-        humanDetail: correlationHintForRun(formatCorrelationFailureHint(failureSummary)),
+        humanDetail: formatCorrelateRunDetail(failureSummary),
       };
     }
 
