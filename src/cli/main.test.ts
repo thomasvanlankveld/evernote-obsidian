@@ -204,6 +204,34 @@ describe('cli main', () => {
     assert.match(err(), /unknown links flag/);
   });
 
+  it('fix-resources dry-run lists importer resource embed changes', async () => {
+    const fixture = join(cliDir, '../vault/__fixtures__/resources');
+    const { streams, out, err } = makeStreams();
+    const code = await main(['fix-resources', '--vault-dir', fixture], streams);
+    assert.equal(code, 0);
+    assert.equal(err(), '');
+    const j = JSON.parse(out()) as {
+      ok: boolean;
+      mode: string;
+      replacements: number;
+      changes: { file: string; line: number }[];
+    };
+    assert.equal(j.ok, true);
+    assert.equal(j.mode, 'dry-run');
+    assert.equal(j.replacements, 2);
+    assert.equal(j.changes.length, 2);
+  });
+
+  it('fix-resources exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(
+      ['fix-resources', '--vault-dir', uniqueFixtureVault, '--nope'],
+      streams,
+    );
+    assert.equal(code, 2);
+    assert.match(err(), /unknown fix-resources flag/);
+  });
+
   it('correlate exits 2 when --snapshot is missing', async () => {
     const { streams, err } = makeStreams();
     const code = await main(['correlate'], streams);
@@ -550,11 +578,12 @@ describe('cli main', () => {
       assert.equal(err(), '');
 
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 4);
+      assert.equal(summaries.length, 5);
       const snapSummary = summaries[0] as { ok: boolean; count: number };
       const corrSummary = summaries[1] as { ok: boolean; count: number };
       const unescapeSummary = summaries[2] as { replacements: number };
       const rewriteSummary = summaries[3] as { mode: string; wroteFiles: boolean };
+      const fixResourcesSummary = summaries[4] as { mode: string; wroteFiles: boolean };
       assert.equal(unescapeSummary.replacements, 0);
       assert.equal(snapSummary.ok, true);
       assert.equal(snapSummary.count, 3);
@@ -562,6 +591,8 @@ describe('cli main', () => {
       assert.equal(corrSummary.count, 3);
       assert.equal(rewriteSummary.mode, 'dry-run');
       assert.equal(rewriteSummary.wroteFiles, false);
+      assert.equal(fixResourcesSummary.mode, 'dry-run');
+      assert.equal(fixResourcesSummary.wroteFiles, false);
 
       const snapStat = await stat(snapOut);
       assert.ok(snapStat.isFile());
@@ -595,7 +626,7 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 3);
+      assert.equal(summaries.length, 4);
       const corrSummary = summaries[0] as { ok: boolean };
       assert.equal(corrSummary.ok, true);
     } finally {
@@ -629,7 +660,7 @@ describe('cli main', () => {
       assert.match(err(), /--map skips the snapshot step/);
       assert.match(err(), /--db is ignored/);
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 2);
+      assert.equal(summaries.length, 3);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -658,7 +689,7 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 2);
+      assert.equal(summaries.length, 3);
       const rewriteSummary = summaries[1] as {
         mode: string;
         replacements: number;
@@ -701,7 +732,7 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 2);
+      assert.equal(summaries.length, 3);
       assert.equal((summaries[1] as { mode: string }).mode, 'dry-run');
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -815,7 +846,7 @@ describe('cli main', () => {
     const code = await main([], streams);
     assert.equal(code, 0);
     assert.match(out(), /\brun\b/);
-    assert.match(out(), /snapshot → correlate → unescape-links → rewrite/);
+    assert.match(out(), /snapshot → correlate → unescape-links → rewrite → fix-resources/);
     assert.match(out(), /\[--db <path>\]/);
   });
 
@@ -845,7 +876,7 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 2);
+      assert.equal(summaries.length, 3);
       const summary = summaries[1] as { mode: string; wroteFiles: boolean };
       assert.equal(summary.mode, 'out-dir');
       assert.equal(summary.wroteFiles, true);

@@ -14,6 +14,7 @@ import {
   reportPathForDisplay,
   runCorrelate,
 } from './correlateCommand.ts';
+import { runFixResources } from './fixResourcesCommand.ts';
 import { type RewriteCliOk, runRewrite } from './rewriteCommand.ts';
 import { runSnapshot } from './snapshotCommand.ts';
 import { runUnescapeLinks } from './unescapeLinksCommand.ts';
@@ -207,7 +208,7 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
       ? parsed.rewrite.outDir
       : undefined;
 
-  return runRewrite(
+  const rewriteCode = await runRewrite(
     {
       vaultRoot: parsed.vaultRoot,
       mapPath,
@@ -215,6 +216,19 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
       outDir: parsed.rewrite.outDir,
       backup: parsed.rewrite.backup,
       overlayReadRoot,
+    },
+    streams,
+  );
+  if (rewriteCode !== 0) {
+    return rewriteCode;
+  }
+
+  return runFixResources(
+    {
+      vaultRoot: parsed.vaultRoot,
+      mode: parsed.rewrite.mode,
+      outDir: parsed.rewrite.outDir,
+      backup: parsed.rewrite.backup,
     },
     streams,
   );
