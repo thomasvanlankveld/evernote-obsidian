@@ -19,5 +19,5 @@ node_modules/
 /dist/
 /out/
 
-# Linked git worktrees (see root AGENTS.md)
+# Legacy in-repo worktrees (pre-Cursor default); safe to delete locally
 .worktrees/
