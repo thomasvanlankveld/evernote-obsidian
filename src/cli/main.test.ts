@@ -273,6 +273,7 @@ describe('cli main', () => {
     const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-correlate-unmatched-'));
     const snapPath = join(dir, 'evernote-notes.json');
     const outPath = join(dir, 'link-map.json');
+    const reportPath = join(dir, 'correlate-report.json');
     const snapshot = {
       version: 1,
       writtenAt: '2026-01-01T00:00:00.000Z',
@@ -283,15 +284,80 @@ describe('cli main', () => {
     try {
       const { streams, out, err } = makeStreams();
       const code = await main(
-        ['correlate', '--vault-dir', uniqueFixtureVault, '--snapshot', snapPath, '--out', outPath],
+        [
+          'correlate',
+          '--vault-dir',
+          uniqueFixtureVault,
+          '--snapshot',
+          snapPath,
+          '--out',
+          outPath,
+          '--report',
+          reportPath,
+        ],
         streams,
         { cwd: dir },
       );
       assert.equal(code, 1);
       assert.equal(out(), '');
-      const j = JSON.parse(err()) as { ok: boolean; unmatched: { guid: string }[] };
-      assert.equal(j.ok, false);
-      assert.equal(j.unmatched.length, 1);
+      const stderr = err();
+      assert.match(stderr, /1 snapshot note, 1 unmatched/);
+      assert.match(stderr, /correlate-report\.json/);
+      const stderrObjects = parseJsonOutputs(stderr) as {
+        ok: boolean;
+        reason?: string;
+        counts?: { unmatched: number };
+        unmatched?: unknown[];
+      }[];
+      const summary = stderrObjects.find((o) => o.counts !== undefined);
+      assert.equal(summary?.ok, false);
+      assert.equal(summary?.reason, 'correlation_failed');
+      assert.equal(summary?.counts?.unmatched, 1);
+      assert.equal(
+        stderrObjects.some((o) => o.unmatched !== undefined),
+        false,
+      );
+
+      const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+        ok: boolean;
+        unmatched: { guid: string }[];
+      };
+      assert.equal(report.ok, false);
+      assert.equal(report.unmatched.length, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('correlate --verbose prints full failure JSON on stderr', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-correlate-verbose-'));
+    const snapPath = join(dir, 'evernote-notes.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [{ guid: 'gx', title: 'Nope Nope', updated: '1970-01-01T00:00:00.000Z' }],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, err } = makeStreams();
+      const code = await main(
+        ['correlate', '--vault-dir', uniqueFixtureVault, '--snapshot', snapPath, '--verbose'],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 1);
+      const stderrObjects = parseJsonOutputs(err()) as {
+        ok: boolean;
+        counts?: { unmatched: number };
+        unmatched?: { guid: string }[];
+      }[];
+      const summary = stderrObjects.find((o) => o.counts !== undefined);
+      const full = stderrObjects.find((o) => o.unmatched !== undefined);
+      assert.equal(summary?.counts?.unmatched, 1);
+      assert.equal(full?.ok, false);
+      assert.equal(full?.unmatched?.length, 1);
+      assert.equal(full?.unmatched?.[0]?.guid, 'gx');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -646,6 +712,7 @@ describe('cli main', () => {
   it('run exits 1 when correlate finds unmatched snapshot titles', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-unmatched-'));
     const dbPath = join(dir, 'en.db');
+    const reportPath = join(dir, 'out', 'correlate-report.json');
     const db = new DatabaseSync(dbPath);
     db.exec(`
       CREATE TABLE notes(
@@ -666,9 +733,19 @@ describe('cli main', () => {
       assert.equal(code, 1);
       const summaries = parseJsonOutputs(out());
       assert.equal(summaries.length, 1);
-      const j = JSON.parse(err()) as { ok: boolean; reason: string };
-      assert.equal(j.ok, false);
-      assert.equal(j.reason, 'correlation_failed');
+      const stderrObjects = parseJsonOutputs(err()) as {
+        ok: boolean;
+        reason?: string;
+        counts?: { unmatched: number };
+      }[];
+      assert.match(err(), /1 unmatched/);
+      const summary = stderrObjects.find((o) => o.counts !== undefined);
+      assert.equal(summary?.ok, false);
+      assert.equal(summary?.reason, 'correlation_failed');
+      const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+        unmatched: { guid: string }[];
+      };
+      assert.equal(report.unmatched.length, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -677,6 +754,7 @@ describe('cli main', () => {
   it('run exits 1 when vault has title collisions (correlate step)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-collision-'));
     const dbPath = join(dir, 'en.db');
+    const reportPath = join(dir, 'out', 'correlate-report.json');
     const db = new DatabaseSync(dbPath);
     db.exec(`
       CREATE TABLE notes(
@@ -699,9 +777,18 @@ describe('cli main', () => {
       assert.equal(code, 1);
       const summaries = parseJsonOutputs(out());
       assert.equal(summaries.length, 1);
-      const j = JSON.parse(err()) as { ok: boolean; reason: string };
-      assert.equal(j.ok, false);
-      assert.equal(j.reason, 'vault_index_collisions');
+      const summary = parseJsonOutputs(err()).find(
+        (o): o is { ok: boolean; reason: string; counts: unknown } =>
+          typeof o === 'object' && o !== null && 'counts' in o,
+      );
+      assert.equal(summary?.ok, false);
+      assert.equal(summary?.reason, 'vault_index_collisions');
+      const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
+        reason: string;
+        collisions: unknown[];
+      };
+      assert.equal(report.reason, 'vault_index_collisions');
+      assert.equal(report.collisions.length, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

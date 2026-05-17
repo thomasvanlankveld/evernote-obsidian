@@ -8,7 +8,11 @@ import {
 } from './argvScan.ts';
 import { createRewriteOutputScanState, finalizeRewriteOutputMode } from './cliFlags.ts';
 import type { MainStreams } from './cliTypes.ts';
-import { runCorrelate } from './correlateCommand.ts';
+import {
+  correlateOutputArgHandlers,
+  reportPathForDisplay,
+  runCorrelate,
+} from './correlateCommand.ts';
 import { type RewriteCliOk, runRewrite } from './rewriteCommand.ts';
 import { runSnapshot } from './snapshotCommand.ts';
 
@@ -21,6 +25,9 @@ export interface RunCliOk {
   mapOutPath: string;
   overridesPath?: string | undefined;
   maxRecords?: number | undefined;
+  correlateReportPath: string;
+  correlateReportPathDisplay: string;
+  correlateVerbose: boolean;
   rewrite: Omit<RewriteCliOk, 'mapPath' | 'vaultRoot'>;
 }
 
@@ -30,6 +37,7 @@ export function parseRunArgs(
 ): { ok: true; run: RunCliOk } | { ok: false; message: string } {
   const snapshotOutDefault = resolve(cwd, 'out', 'evernote-notes.json');
   const mapOutDefault = resolve(cwd, 'out', 'link-map.json');
+  const correlateReportDefault = resolve(cwd, 'out', 'correlate-report.json');
   let dbPath: string | undefined;
   let inputSnapshotPath: string | undefined;
   let snapshotOutPath = snapshotOutDefault;
@@ -38,6 +46,7 @@ export function parseRunArgs(
   let overridesPath: string | undefined;
   let maxRecords: number | undefined;
   const rewriteOutput = createRewriteOutputScanState();
+  const correlateOutput: { reportPath?: string | undefined; verbose: boolean } = { verbose: false };
 
   const scanned = scanArgv(args, cwd, {
     subcommand: 'run',
@@ -68,6 +77,7 @@ export function parseRunArgs(
       positiveIntFlagHandler('max-notes', (value) => {
         maxRecords = value;
       }),
+      ...correlateOutputArgHandlers(correlateOutput),
       ...rewriteOutputModeArgHandlers(rewriteOutput),
     ],
   });
@@ -97,6 +107,8 @@ export function parseRunArgs(
     return modeParsed;
   }
 
+  const correlateReportPath = correlateOutput.reportPath ?? correlateReportDefault;
+
   return {
     ok: true,
     run: {
@@ -108,6 +120,9 @@ export function parseRunArgs(
       mapOutPath,
       overridesPath,
       maxRecords,
+      correlateReportPath,
+      correlateReportPathDisplay: reportPathForDisplay(correlateReportPath, cwd),
+      correlateVerbose: correlateOutput.verbose,
       rewrite: {
         mode: modeParsed.mode,
         outDir: modeParsed.outDir,
@@ -151,6 +166,9 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
         snapshotPath,
         overridesPath: parsed.overridesPath,
         outPath: parsed.mapOutPath,
+        reportPath: parsed.correlateReportPath,
+        reportPathDisplay: parsed.correlateReportPathDisplay,
+        verbose: parsed.correlateVerbose,
       },
       streams,
     );
