@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-17 (vault `evernote-guid:` frontmatter; correlate GUID-first matching)
+**Last updated:** 2026-05-17 (Importer-aware title normalization for correlate)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -47,13 +47,14 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 - [x] Walk configurable vault root; **CLI default** is **`./data`** (cwd-relative), overridable with **`--vault`** (`evernote-obsidian index`).
 - [x] Index Markdown files: path, **normalized title** from filename and optional YAML frontmatter (`title:`).
-- [x] **Correlation key (v1):** normalized **title**; **v1.1:** optional frontmatter **`evernote-guid:`** (line-based scalar, lowercase in index).
+- [x] **Correlation key (v1):** normalized **title** (Obsidian Importer filename rules, then NFC / lowercase / whitespace); **v1.1:** optional frontmatter **`evernote-guid:`** (line-based scalar, lowercase in index).
 - [x] **Duplicate titles:** **fail** with a report listing collisions — **no** silent first-wins.
 - [x] **Duplicate `evernote-guid:` values** in the vault: **fail** with `guidCollisions` (same no-silent-wins rule).
 
 **Phase 2 implementation notes**
 
 - **Frontmatter `title:` / `evernote-guid:` (v1):** line-based subset only (first scalar line per key, optional simple quotes), not full YAML — no block scalars, aliases, or other keys. GUIDs are normalized to lowercase in the index.
+- **Title normalization:** before NFC / case / whitespace collapse, apply the same class of transforms as [Obsidian Importer `sanitizeFileName`](https://github.com/obsidianmd/obsidian-importer/blob/master/src/util.ts) for note filenames (`/` → `-`, remove `? < > : * | "` and control chars). Aligns Evernote backup titles with importer filename stems when `evernote-guid:` is absent. Remaining edge cases (`—` vs `-`, `#`, `?`, double spaces in stems) may still need overrides.
 - **Empty normalized title** (e.g. filename stem trims to nothing): **invalid**; index fails with the same collision-shaped report shape (`normalizedTitle: ""`).
 - **Symlinks:** **symlinked directories are not recursed** (avoids cycles); a regular file that is a symlink is still indexed. Layouts that rely on symlinked folders for notes are unsupported in v1.
 - **CLI:** `--vault` requires a path when the flag is present; other I/O errors surface as **exit 2** and a short message (not only missing root).
@@ -117,7 +118,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 
 | Risk                                       | Mitigation                                                           |
 | ------------------------------------------ | -------------------------------------------------------------------- |
-| Title mismatch after Importer sanitization | Normalization rules + override file; full unmatched detail in correlate report file (`--report`; `--verbose` for stderr) |
+| Title mismatch after Importer sanitization | Importer-aware `normalizeTitle` + override file; full unmatched detail in correlate report file (`--report`; `--verbose` for stderr) |
 | Duplicate titles                           | Fail with report; overrides required until unambiguous               |
 | Stale backup vs Obsidian import                    | Re-run `evernote-backup sync` before `snapshot`; document refresh cadence |
 | evernote-backup DB format drift                    | Fail fast on missing `notes` table; pin upstream schema in tests / README     |

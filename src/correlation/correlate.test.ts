@@ -51,10 +51,10 @@ describe('correlateSnapshotToGuidPaths', () => {
     }
   });
 
-  it('correlates titles containing punctuation and collapses Evernote title whitespace', () => {
+  it('correlates Evernote titles to Importer-sanitized vault stems and collapses whitespace', () => {
     const vault = vaultIndexResultToCorrelationInput(
-      new Map([['hello: world (v2)', 'Hello: World (v2).md']]),
-      ['Hello: World (v2).md'],
+      new Map([['hello world (v2)', 'Hello World (v2).md']]),
+      ['Hello World (v2).md'],
     );
     const notes: NoteRecord[] = [
       {
@@ -66,7 +66,55 @@ describe('correlateSnapshotToGuidPaths', () => {
     const r = correlateSnapshotToGuidPaths(notes, vault);
     assert.equal(r.ok, true);
     if (r.ok) {
-      assert.equal(r.guidToPath.get('g-punct'), 'Hello: World (v2).md');
+      assert.equal(r.guidToPath.get('g-punct'), 'Hello World (v2).md');
+    }
+  });
+
+  it('matches snapshot titles to vault paths when strict punctuation would fail', () => {
+    const vaultPaths = [
+      'Coming Down to Earth What if….md',
+      'Everybody Loves Zombies  Running The Game - YouTube.md',
+      'Lydian & Mixolydian Scales - Modes.md',
+      'LMoPh Leeuwenschild Koster (…).md',
+    ] as const;
+    const vault = vaultIndexResultToCorrelationInput(
+      new Map([
+        ['coming down to earth what if…', vaultPaths[0]],
+        ['everybody loves zombies running the game - youtube', vaultPaths[1]],
+        ['lydian & mixolydian scales - modes', vaultPaths[2]],
+        ['lmoph leeuwenschild koster (…)', vaultPaths[3]],
+      ]),
+      vaultPaths,
+    );
+    const notes: NoteRecord[] = [
+      {
+        guid: 'g-colon',
+        title: 'Coming Down to Earth: What if…',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-pipe',
+        title: 'Everybody Loves Zombies | Running The Game - YouTube',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-slash',
+        title: 'Lydian & Mixolydian Scales / Modes',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-prefix',
+        title: 'LMoPh: Leeuwenschild Koster (…)',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.guidToPath.get('g-colon'), vaultPaths[0]);
+      assert.equal(r.guidToPath.get('g-pipe'), vaultPaths[1]);
+      assert.equal(r.guidToPath.get('g-slash'), vaultPaths[2]);
+      assert.equal(r.guidToPath.get('g-prefix'), vaultPaths[3]);
     }
   });
 
