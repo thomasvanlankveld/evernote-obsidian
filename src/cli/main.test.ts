@@ -3,60 +3,15 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { Writable } from 'node:stream';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { type MainStreams, main } from './main.ts';
+import { makeStreams, parseJsonOutputs } from './cliTestHelpers.ts';
+import { main } from './main.ts';
 
 const cliDir = dirname(fileURLToPath(import.meta.url));
 const uniqueFixtureVault = join(cliDir, '../vault/__fixtures__/unique');
 const collisionFixtureVault = join(cliDir, '../vault/__fixtures__/collision');
 const linksFixtureDir = join(cliDir, '../vault/__fixtures__/links');
-
-/** Parse one or more pretty-printed JSON objects written to stdout. */
-function parseJsonOutputs(text: string): unknown[] {
-  const results: unknown[] = [];
-  let depth = 0;
-  let start = -1;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '{') {
-      if (depth === 0) {
-        start = i;
-      }
-      depth++;
-    } else if (ch === '}') {
-      depth--;
-      if (depth === 0 && start >= 0) {
-        results.push(JSON.parse(text.slice(start, i + 1)));
-        start = -1;
-      }
-    }
-  }
-  return results;
-}
-
-function makeStreams(): { streams: MainStreams; out: () => string; err: () => string } {
-  const outChunks: Buffer[] = [];
-  const errChunks: Buffer[] = [];
-  const stdout = new Writable({
-    write(chunk, _enc, cb) {
-      outChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      cb();
-    },
-  });
-  const stderr = new Writable({
-    write(chunk, _enc, cb) {
-      errChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      cb();
-    },
-  });
-  return {
-    streams: { stdout, stderr },
-    out: () => Buffer.concat(outChunks).toString('utf8'),
-    err: () => Buffer.concat(errChunks).toString('utf8'),
-  };
-}
 
 describe('cli main', () => {
   it('prints usage and exits 0 with no arguments', async () => {
