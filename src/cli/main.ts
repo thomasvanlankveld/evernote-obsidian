@@ -7,6 +7,7 @@ export type { MainOptions, MainStreams } from './cliTypes.ts';
 import type { MainOptions, MainStreams } from './cliTypes.ts';
 import { parseCorrelateArgs, runCorrelate } from './correlateCommand.ts';
 import { parseFixResourcesArgs, runFixResources } from './fixResourcesCommand.ts';
+import { parseGuidBackfillArgs, runGuidBackfill } from './guidBackfillCommand.ts';
 import { parseIndexArgs, runIndex } from './indexCommand.ts';
 import { parseLinksArgs, runLinks } from './linksCommand.ts';
 import { parseRewriteArgs, runRewrite } from './rewriteCommand.ts';
@@ -67,6 +68,15 @@ export async function main(
       return 2;
     }
     return (await runCorrelate(parsed.correlate, streams)).exitCode;
+  }
+
+  if (cmd === 'guid-backfill') {
+    const parsed = parseGuidBackfillArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return (await runGuidBackfill(parsed.guidBackfill, streams)).exitCode;
   }
 
   if (cmd === 'rewrite') {
