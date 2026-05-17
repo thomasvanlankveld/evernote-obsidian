@@ -49,6 +49,8 @@ async function seedPipelineVault(vaultRoot: string): Promise<void> {
       '',
       `See [My alias](https://www.evernote.com/shard/s308/n/${TARGET_GUID}/title-slug).`,
       '',
+      String.raw`* \[[Stat block](https://www.dndbeyond.com/monsters/example)\]`,
+      '',
     ].join('\n'),
     'utf8',
   );
@@ -183,10 +185,10 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(runStreams.err(), '', 'run subcommand: stderr');
 
       const summaries = parseJsonOutputs(runStreams.out());
-      assert.equal(summaries.length, 3, 'run subcommand: stdout JSON summary count');
+      assert.equal(summaries.length, 4, 'run subcommand: stdout JSON summary count');
       const snapSummary = summaries[0] as { ok: boolean; count: number };
       const corrSummary = summaries[1] as { ok: boolean; count: number };
-      const rewriteSummary = summaries[2] as {
+      const rewriteSummary = summaries[3] as {
         mode: string;
         filesChanged: number;
         replacements: number;
@@ -241,11 +243,61 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(runStreams.err(), '', 'run uppercase guid: stderr');
 
       const summaries = parseJsonOutputs(runStreams.out());
-      assert.equal(summaries.length, 3);
-      const rewriteSummary = summaries[2] as { replacements: number };
+      assert.equal(summaries.length, 4);
+      const rewriteSummary = summaries[3] as { replacements: number };
       assert.equal(rewriteSummary.replacements, 1, 'run uppercase guid: replacements');
 
       await assertPipelineArtifacts(snapshotPath, mapPath, outVault, 'run uppercase guid');
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('run unescapes external links before rewrite with --out-dir', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'eo-pipeline-unescape-run-'));
+    const vaultRoot = join(work, 'vault');
+    const dbPath = join(work, 'en.db');
+    const snapshotPath = join(work, 'out', 'evernote-notes.json');
+    const mapPath = join(work, 'out', 'link-map.json');
+    const outVault = join(work, 'out', 'rewritten-vault');
+
+    try {
+      createMinimalBackupDb(dbPath);
+      await seedPipelineVault(vaultRoot);
+
+      const runStreams = makeStreams();
+      const runCode = await main(
+        [
+          'run',
+          '--vault-dir',
+          vaultRoot,
+          '--db',
+          dbPath,
+          '--out',
+          snapshotPath,
+          '--map-out',
+          mapPath,
+          '--out-dir',
+          outVault,
+        ],
+        runStreams.streams,
+        { cwd: work },
+      );
+      assert.equal(runCode, 0, runStreams.err());
+
+      const summaries = parseJsonOutputs(runStreams.out());
+      assert.equal(summaries.length, 4);
+      const unescapeSummary = summaries[2] as { replacements: number; filesChanged: number };
+      assert.equal(unescapeSummary.replacements, 1);
+      assert.equal(unescapeSummary.filesChanged, 1);
+
+      const rewritten = await readFile(join(outVault, 'links.md'), 'utf8');
+      assert.match(rewritten, /\[\[target note\.md\|My alias\]\]/);
+      assert.match(
+        rewritten,
+        /^\* \[Stat block\]\(https:\/\/www\.dndbeyond\.com\/monsters\/example\)/m,
+      );
+      assert.doesNotMatch(rewritten, /\\\[Stat block\]/);
     } finally {
       await rm(work, { recursive: true, force: true });
     }

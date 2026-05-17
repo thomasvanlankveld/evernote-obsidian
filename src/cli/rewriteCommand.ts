@@ -7,6 +7,7 @@ import {
   parseLinkMapJson,
 } from '../correlation/linkMapFile.ts';
 import { atomicReplaceFile } from '../fs/atomicReplaceFile.ts';
+import { readVaultMarkdownFile } from '../vault/readVaultMarkdownFile.ts';
 import { rewriteMarkdownWithGuidMap } from '../vault/rewriteEvernoteLinks.ts';
 import { VaultIndexRootError, walkVaultMarkdownFiles } from '../vault/vaultIndex.ts';
 import {
@@ -25,6 +26,8 @@ export interface RewriteCliOk {
   mode: 'dry-run' | 'out-dir' | 'in-place';
   outDir?: string | undefined;
   backup?: boolean | undefined;
+  /** When set, read Markdown from this mirror before the vault file (chained `--out-dir`). */
+  overlayReadRoot?: string | undefined;
 }
 
 export function parseRewriteArgs(
@@ -90,7 +93,9 @@ export async function runRewrite(parsed: RewriteCliOk, streams: MainStreams): Pr
 
     for (const abs of files) {
       filesScanned++;
-      const content = await readFile(abs, 'utf8');
+      const content = await readVaultMarkdownFile(abs, parsed.vaultRoot, {
+        overlayRoot: parsed.overlayReadRoot,
+      });
       const {
         content: next,
         replaced,

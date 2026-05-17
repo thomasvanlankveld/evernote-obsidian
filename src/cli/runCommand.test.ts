@@ -39,6 +39,17 @@ describe('parseRunArgs', () => {
     }
   });
 
+  it('parses --skip-unescape-links', () => {
+    const parsed = parseRunArgs(
+      ['--vault-dir', './v', '--db', './db', '--skip-unescape-links'],
+      cwd,
+    );
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      assert.equal(parsed.run.skipUnescapeLinks, true);
+    }
+  });
+
   it('sets snapshotOutPath and mapOutPath from --out', () => {
     const parsed = parseRunArgs(
       ['--vault-dir', './v', '--db', './db', '--out', './snap.json', '--map-out', './map.json'],

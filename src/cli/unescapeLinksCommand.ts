@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { atomicReplaceFile } from '../fs/atomicReplaceFile.ts';
+import { readVaultMarkdownFile } from '../vault/readVaultMarkdownFile.ts';
 import { unescapeMarkdownLinksInContent } from '../vault/unescapeMarkdownLinks.ts';
 import { VaultIndexRootError, walkVaultMarkdownFiles } from '../vault/vaultIndex.ts';
 import {
@@ -140,7 +141,7 @@ export async function runUnescapeLinks(
         continue;
       }
       filesScanned++;
-      const content = await readFile(abs, 'utf8');
+      const content = await readVaultMarkdownFile(abs, parsed.vaultRoot);
       const result = unescapeMarkdownLinksInContent(content);
       if (result.content === content) {
         continue;
