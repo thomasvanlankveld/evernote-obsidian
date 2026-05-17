@@ -1,0 +1,51 @@
+import { readCliPackageVersion } from './packageVersion.ts';
+
+export function usage(): string {
+  return [
+    'evernote-obsidian — Evernote → Obsidian link repair',
+    '',
+    'Usage:',
+    '  evernote-obsidian [--help|--version]',
+    '  evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
+    '  evernote-obsidian index [--vault-dir <path>]',
+    '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',
+    '  evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]',
+    '  evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>] [--map-out <path>]',
+    '  evernote-obsidian rewrite --map <path> [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
+    '',
+    'Commands:',
+    '  run        Chain snapshot → correlate → rewrite (typical one-shot fix; --db unless --snapshot/--map reuse intermediates).',
+    '  index      Build a read-only vault index (normalized titles must be unique).',
+    '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
+    '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
+    '  correlate  Join snapshot GUIDs to vault paths (evernote-guid frontmatter, else title); optional overrides JSON.',
+    '  rewrite    Replace Evernote note URLs with Obsidian wikilinks using link-map.json from correlate.',
+    '',
+    'Options:',
+    '  --vault-dir                    Root directory of Markdown to scan (importer output, a subfolder, or full Obsidian vault; default: ./data)',
+    '  --vault                        Alias for --vault-dir',
+    '  --map                          Path to link map JSON (required for rewrite; on run, skips correlate and snapshot)',
+    '  --dry-run                      Rewrite preview only (default when neither --out-dir nor --in-place)',
+    '  --out-dir                      Write changed Markdown files under this directory (mirrors vault paths)',
+    '  --in-place                     Overwrite Markdown in the vault (use with care)',
+    '  --backup                       With --in-place, write <file>.evernote-obsidian.bak before overwriting',
+    '  --snapshot                     Path to Evernote snapshot JSON (required for correlate)',
+    '  --overrides                    Optional JSON file: { "version": 1, "byGuid": { "<guid>": "<path>" } }',
+    '  --skip-other-evernote-hosts    Omit non-shard *.evernote.com URLs from the links report',
+    '  --db                           Path to evernote-backup SQLite database (required for snapshot)',
+    '  --out                          Output path (snapshot default: ./out/evernote-notes.json; correlate: ./out/link-map.json; links: stdout unless set)',
+    '  --max-notes                    Stop after N notes (optional cap; notes ordered by title)',
+    '  --snapshot-out                 Snapshot JSON output for run (alias: --out when generating a snapshot)',
+    '',
+    '  run prints one JSON summary per step on stdout (pretty-printed). Scripts should parse brace-balanced objects or call step commands separately.',
+    '  With run, --map without --snapshot skips snapshot (and correlate); --db is ignored in that case.',
+    '  --map-out                      Link map output for run (default: ./out/link-map.json)',
+    '',
+    '  evernote-backup: https://github.com/vzhd1701/evernote-backup',
+    '',
+  ].join('\n');
+}
+
+export function cliVersion(): string {
+  return readCliPackageVersion();
+}
