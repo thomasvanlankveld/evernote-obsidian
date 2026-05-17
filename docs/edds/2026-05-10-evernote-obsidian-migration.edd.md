@@ -98,7 +98,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 - **CLI:** `evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]` — default **`./out/link-map.json`**, vault default **`./data`**.
 - **GUID map keys:** Evernote note GUIDs in snapshots, `guidToPath` / `link-map.json`, and override `byGuid` keys are always stored **lowercase** (normalized at ingestion). Link extraction lowercases GUIDs parsed from URLs before lookup; this keeps in-memory and on-disk maps aligned.
 - **Overrides JSON:** `{ "version": 1, "byGuid": { "<guid>": "<vault-relative-path>" } }` — paths must match an indexed `.md` path (POSIX separators). **Evernote duplicate titles** (multiple GUIDs sharing the same normalized title) require **`byGuid` for every GUID** in that group.
-- **Failure cases (exit 1, JSON on stderr):** vault index title/`evernote-guid` collisions (same as `index`); **unmatched** snapshot rows; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without resolvable GUIDs/overrides; **`guidTitleMismatches`** when frontmatter GUID and title-based resolution disagree.
+- **Failure cases (exit 1):** vault index title/`evernote-guid` collisions (same as `index`); **unmatched** snapshot rows; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without resolvable GUIDs/overrides; **`guidTitleMismatches`** when frontmatter GUID and title-based resolution disagree. By default stderr shows a one-line hint plus compact counts; full arrays are written to **`./out/correlate-report.json`** (**`--report`**). **`--verbose`** / **`--report-stdout`** also print the full JSON on stderr (legacy scripting).
 
 ### Phase 6 — Rewrite
 
@@ -116,7 +116,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 
 | Risk                                       | Mitigation                                                           |
 | ------------------------------------------ | -------------------------------------------------------------------- |
-| Title mismatch after Importer sanitization | Normalization rules + override file; verbose unmatched report        |
+| Title mismatch after Importer sanitization | Normalization rules + override file; full unmatched detail in correlate report file (`--report`; `--verbose` for stderr) |
 | Duplicate titles                           | Fail with report; overrides required until unambiguous               |
 | Stale backup vs Obsidian import                    | Re-run `evernote-backup sync` before `snapshot`; document refresh cadence |
 | evernote-backup DB format drift                    | Fail fast on missing `notes` table; pin upstream schema in tests / README     |

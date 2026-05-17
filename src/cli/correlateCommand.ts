@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import {
   correlateSnapshotToGuidPaths,
   vaultIndexResultToCorrelationInput,
@@ -8,8 +8,19 @@ import { buildLinkMapFile } from '../correlation/linkMapFile.ts';
 import { parseCorrelationOverridesJson } from '../correlation/overridesFile.ts';
 import { readSnapshotFile } from '../evernote/snapshotFile.ts';
 import { buildVaultIndex, VaultIndexRootError } from '../vault/vaultIndex.ts';
-import { pathFlagHandler, scanArgv, vaultDirArgHandler } from './argvScan.ts';
+import {
+  type ArgHandler,
+  exactFlagHandler,
+  pathFlagHandler,
+  scanArgv,
+  vaultDirArgHandler,
+} from './argvScan.ts';
 import type { MainStreams } from './cliTypes.ts';
+import {
+  correlationFailureFromCorrelateResult,
+  correlationFailureFromVaultIndex,
+  emitCorrelateFailure,
+} from './correlateFailureReport.ts';
 import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 export interface CorrelateCliOk {
@@ -17,6 +28,37 @@ export interface CorrelateCliOk {
   snapshotPath?: string | undefined;
   overridesPath?: string | undefined;
   outPath: string;
+  reportPath: string;
+  reportPathDisplay: string;
+  verbose: boolean;
+}
+
+export function reportPathForDisplay(absPath: string, cwd: string): string {
+  const rel = relative(cwd, absPath);
+  if (rel === '') {
+    return absPath;
+  }
+  if (rel.startsWith('..')) {
+    return absPath;
+  }
+  return rel.startsWith('.') ? rel : `./${rel}`;
+}
+
+export function correlateOutputArgHandlers(state: {
+  reportPath?: string | undefined;
+  verbose: boolean;
+}): ArgHandler[] {
+  return [
+    pathFlagHandler('report', './out/correlate-report.json', (path) => {
+      state.reportPath = path;
+    }),
+    exactFlagHandler('--verbose', () => {
+      state.verbose = true;
+    }),
+    exactFlagHandler('--report-stdout', () => {
+      state.verbose = true;
+    }),
+  ];
 }
 
 export function parseCorrelateArgs(
@@ -26,10 +68,12 @@ export function parseCorrelateArgs(
 ): { ok: true; correlate: CorrelateCliOk } | { ok: false; message: string } {
   const subcommand = options?.subcommand ?? 'correlate';
   const defaultOut = resolve(cwd, 'out', 'link-map.json');
+  const defaultReport = resolve(cwd, 'out', 'correlate-report.json');
   let snapshotPath: string | undefined;
   let mapPath: string | undefined;
   let overridesPath: string | undefined;
   let outPath = defaultOut;
+  const outputState: { reportPath?: string | undefined; verbose: boolean } = { verbose: false };
 
   const scanned = scanArgv(args, cwd, {
     subcommand,
@@ -50,6 +94,7 @@ export function parseCorrelateArgs(
       pathFlagHandler('map-out', './out/link-map.json', (path) => {
         outPath = path;
       }),
+      ...correlateOutputArgHandlers(outputState),
     ],
   });
   if (!scanned.ok) {
@@ -72,6 +117,8 @@ export function parseCorrelateArgs(
     };
   }
 
+  const reportPath = outputState.reportPath ?? defaultReport;
+
   return {
     ok: true,
     correlate: {
@@ -79,6 +126,9 @@ export function parseCorrelateArgs(
       snapshotPath,
       overridesPath,
       outPath,
+      reportPath,
+      reportPathDisplay: reportPathForDisplay(reportPath, cwd),
+      verbose: outputState.verbose,
     },
   };
 }
@@ -91,17 +141,15 @@ export async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams)
   try {
     const index = await buildVaultIndex(parsed.vaultRoot);
     if (!index.ok) {
-      streams.stderr.write(
-        `${JSON.stringify(
-          {
-            ok: false,
-            reason: 'vault_index_collisions',
-            collisions: index.collisions,
-            guidCollisions: index.guidCollisions,
-          },
-          null,
-          2,
-        )}\n`,
+      await emitCorrelateFailure(
+        streams,
+        correlationFailureFromVaultIndex(index.collisions, index.guidCollisions),
+        {
+          reportPath: parsed.reportPath,
+          reportPathDisplay: parsed.reportPathDisplay,
+          snapshotNotes: 0,
+          verbose: parsed.verbose,
+        },
       );
       return 1;
     }
@@ -127,21 +175,12 @@ export async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams)
     );
     const result = correlateSnapshotToGuidPaths(snapshot.notes, vaultInput, overrides);
     if (!result.ok) {
-      streams.stderr.write(
-        `${JSON.stringify(
-          {
-            ok: false,
-            reason: 'correlation_failed',
-            evernoteTitleCollisions: result.evernoteTitleCollisions,
-            unmatched: result.unmatched,
-            invalidOverrides: result.invalidOverrides,
-            duplicateTargetPaths: result.duplicateTargetPaths,
-            guidTitleMismatches: result.guidTitleMismatches,
-          },
-          null,
-          2,
-        )}\n`,
-      );
+      await emitCorrelateFailure(streams, correlationFailureFromCorrelateResult(result), {
+        reportPath: parsed.reportPath,
+        reportPathDisplay: parsed.reportPathDisplay,
+        snapshotNotes: snapshot.notes.length,
+        verbose: parsed.verbose,
+      });
       return 1;
     }
 
