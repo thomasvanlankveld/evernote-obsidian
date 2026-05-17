@@ -109,6 +109,15 @@ export async function main(
     return runRewrite(parsed.rewrite, streams);
   }
 
+  if (cmd === 'run') {
+    const parsed = parseRunArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runRun(parsed.run, streams);
+  }
+
   streams.stderr.write(`Unknown command: ${cmd}\n\n${usage()}`);
   return 2;
 }
@@ -450,6 +459,267 @@ function parseRewriteArgs(
   };
 }
 
+interface RunCliOk {
+  vaultRoot: string;
+  dbPath?: string | undefined;
+  snapshotPath?: string | undefined;
+  snapshotOutPath: string;
+  mapPath?: string | undefined;
+  mapOutPath: string;
+  overridesPath?: string | undefined;
+  maxRecords?: number | undefined;
+  rewrite: Omit<RewriteCliOk, 'mapPath' | 'vaultRoot'>;
+}
+
+function parseRunArgs(
+  args: readonly string[],
+  cwd: string,
+): { ok: true; run: RunCliOk } | { ok: false; message: string } {
+  const defaultSnapshotOut = resolve(cwd, 'out', 'evernote-notes.json');
+  const defaultMapOut = resolve(cwd, 'out', 'link-map.json');
+  let vaultState = createVaultDirFlagState();
+  let vaultExplicit = false;
+  let dbPath: string | undefined;
+  let snapshotPath: string | undefined;
+  let snapshotOutPath = defaultSnapshotOut;
+  let mapPath: string | undefined;
+  let mapOutPath = defaultMapOut;
+  let overridesPath: string | undefined;
+  let maxRecords: number | undefined;
+  let explicitDryRun = false;
+  let outDir: string | undefined;
+  let inPlace = false;
+  let backup = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === undefined) {
+      continue;
+    }
+    const vaultApplied = applyVaultDirFlag(a, args, i, cwd, vaultState);
+    if (vaultApplied.kind === 'error') {
+      return { ok: false, message: vaultApplied.message };
+    }
+    if (vaultApplied.kind === 'handled') {
+      vaultState = vaultApplied.state;
+      vaultExplicit = true;
+      i = vaultApplied.nextIndex;
+      continue;
+    }
+    const dbApplied = applyPathFlag(a, args, i, cwd, 'db', './en_backup.db');
+    if (dbApplied.kind === 'error') {
+      return { ok: false, message: dbApplied.message };
+    }
+    if (dbApplied.kind === 'handled') {
+      dbPath = dbApplied.path;
+      i = dbApplied.nextIndex;
+      continue;
+    }
+    const snapshotApplied = applyPathFlag(a, args, i, cwd, 'snapshot', './out/evernote-notes.json');
+    if (snapshotApplied.kind === 'error') {
+      return { ok: false, message: snapshotApplied.message };
+    }
+    if (snapshotApplied.kind === 'handled') {
+      snapshotPath = snapshotApplied.path;
+      i = snapshotApplied.nextIndex;
+      continue;
+    }
+    const snapshotOutApplied = applyPathFlag(
+      a,
+      args,
+      i,
+      cwd,
+      'snapshot-out',
+      './out/evernote-notes.json',
+    );
+    if (snapshotOutApplied.kind === 'error') {
+      return { ok: false, message: snapshotOutApplied.message };
+    }
+    if (snapshotOutApplied.kind === 'handled') {
+      snapshotOutPath = snapshotOutApplied.path;
+      i = snapshotOutApplied.nextIndex;
+      continue;
+    }
+    const mapApplied = applyPathFlag(a, args, i, cwd, 'map', './out/link-map.json');
+    if (mapApplied.kind === 'error') {
+      return { ok: false, message: mapApplied.message };
+    }
+    if (mapApplied.kind === 'handled') {
+      mapPath = mapApplied.path;
+      i = mapApplied.nextIndex;
+      continue;
+    }
+    const mapOutApplied = applyPathFlag(a, args, i, cwd, 'map-out', './out/link-map.json');
+    if (mapOutApplied.kind === 'error') {
+      return { ok: false, message: mapOutApplied.message };
+    }
+    if (mapOutApplied.kind === 'handled') {
+      mapOutPath = mapOutApplied.path;
+      i = mapOutApplied.nextIndex;
+      continue;
+    }
+    const outApplied = applyPathFlag(a, args, i, cwd, 'out', './out/evernote-notes.json');
+    if (outApplied.kind === 'error') {
+      return { ok: false, message: outApplied.message };
+    }
+    if (outApplied.kind === 'handled') {
+      snapshotOutPath = outApplied.path;
+      i = outApplied.nextIndex;
+      continue;
+    }
+    const overridesApplied = applyPathFlag(
+      a,
+      args,
+      i,
+      cwd,
+      'overrides',
+      './out/correlation-overrides.json',
+    );
+    if (overridesApplied.kind === 'error') {
+      return { ok: false, message: overridesApplied.message };
+    }
+    if (overridesApplied.kind === 'handled') {
+      overridesPath = overridesApplied.path;
+      i = overridesApplied.nextIndex;
+      continue;
+    }
+    const maxApplied = applyPositiveIntFlag(a, args, i, 'max-notes');
+    if (maxApplied.kind === 'error') {
+      return { ok: false, message: maxApplied.message };
+    }
+    if (maxApplied.kind === 'handled') {
+      maxRecords = maxApplied.value;
+      i = maxApplied.nextIndex;
+      continue;
+    }
+    if (a === '--dry-run') {
+      explicitDryRun = true;
+      continue;
+    }
+    const outDirApplied = applyPathFlag(a, args, i, cwd, 'out-dir', './out/rewritten-vault');
+    if (outDirApplied.kind === 'error') {
+      return { ok: false, message: outDirApplied.message };
+    }
+    if (outDirApplied.kind === 'handled') {
+      outDir = outDirApplied.path;
+      i = outDirApplied.nextIndex;
+      continue;
+    }
+    if (a === '--in-place') {
+      inPlace = true;
+      continue;
+    }
+    if (a === '--backup') {
+      backup = true;
+      continue;
+    }
+    return { ok: false, message: unknownSubcommandFlagError('run', a) };
+  }
+
+  if (!vaultExplicit) {
+    return {
+      ok: false,
+      message: 'error: run requires --vault-dir <path> (or --vault)',
+    };
+  }
+
+  if (snapshotPath === undefined && dbPath === undefined) {
+    return {
+      ok: false,
+      message: 'error: run requires --db <path> unless reusing an existing snapshot via --snapshot',
+    };
+  }
+
+  if (inPlace && outDir !== undefined) {
+    return { ok: false, message: 'error: use only one of --in-place or --out-dir' };
+  }
+
+  if (explicitDryRun && (inPlace || outDir !== undefined)) {
+    return {
+      ok: false,
+      message: 'error: --dry-run cannot be combined with --in-place or --out-dir',
+    };
+  }
+
+  if (backup && !inPlace) {
+    return { ok: false, message: 'error: --backup is only valid with --in-place' };
+  }
+
+  let rewriteMode: RewriteCliOk['mode'];
+  if (inPlace) {
+    rewriteMode = 'in-place';
+  } else if (outDir !== undefined) {
+    rewriteMode = 'out-dir';
+  } else {
+    rewriteMode = 'dry-run';
+  }
+
+  return {
+    ok: true,
+    run: {
+      vaultRoot: resolveVaultRootFromState(vaultState, cwd),
+      dbPath,
+      snapshotPath,
+      snapshotOutPath,
+      mapPath,
+      mapOutPath,
+      overridesPath,
+      maxRecords,
+      rewrite: {
+        mode: rewriteMode,
+        outDir: rewriteMode === 'out-dir' ? outDir : undefined,
+        backup: backup ? true : undefined,
+      },
+    },
+  };
+}
+
+async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<number> {
+  let snapshotPath = parsed.snapshotPath;
+  if (snapshotPath === undefined) {
+    const code = await runSnapshot(
+      {
+        dbPath: parsed.dbPath as string,
+        outPath: parsed.snapshotOutPath,
+        maxRecords: parsed.maxRecords,
+      },
+      streams,
+    );
+    if (code !== 0) {
+      return code;
+    }
+    snapshotPath = parsed.snapshotOutPath;
+  }
+
+  let mapPath = parsed.mapPath;
+  if (mapPath === undefined) {
+    const code = await runCorrelate(
+      {
+        vaultRoot: parsed.vaultRoot,
+        snapshotPath,
+        overridesPath: parsed.overridesPath,
+        outPath: parsed.mapOutPath,
+      },
+      streams,
+    );
+    if (code !== 0) {
+      return code;
+    }
+    mapPath = parsed.mapOutPath;
+  }
+
+  return runRewrite(
+    {
+      vaultRoot: parsed.vaultRoot,
+      mapPath,
+      mode: parsed.rewrite.mode,
+      outDir: parsed.rewrite.outDir,
+      backup: parsed.rewrite.backup,
+    },
+    streams,
+  );
+}
+
 async function runCorrelate(parsed: CorrelateCliOk, streams: MainStreams): Promise<number> {
   try {
     const index = await buildVaultIndex(parsed.vaultRoot);
@@ -703,6 +973,7 @@ function usage(): string {
     '  evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]',
     '  evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>]',
     '  evernote-obsidian rewrite --map <path> [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
+    '  evernote-obsidian run --vault-dir <path> --db <path> [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--max-notes <n>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '',
     'Commands:',
     '  index      Build a read-only vault index (normalized titles must be unique).',
@@ -710,6 +981,7 @@ function usage(): string {
     '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
     '  correlate  Join snapshot GUIDs to vault paths by normalized title; optional overrides JSON.',
     '  rewrite    Replace Evernote note URLs with Obsidian wikilinks using link-map.json from correlate.',
+    '  run        Chain snapshot → correlate → rewrite (use individual commands to inspect intermediate files).',
     '',
     'Options:',
     '  --vault-dir                    Root directory of Markdown to scan (importer output, a subfolder, or full Obsidian vault; default: ./data)',
@@ -725,6 +997,8 @@ function usage(): string {
     '  --db                           Path to evernote-backup SQLite database (required for snapshot)',
     '  --out                          Output path (snapshot default: ./out/evernote-notes.json; correlate: ./out/link-map.json; links: stdout unless set)',
     '  --max-notes                    Stop after N notes (optional cap; notes ordered by title)',
+    '  --snapshot-out                 Snapshot JSON output for run (alias: --out when generating a snapshot)',
+    '  --map-out                      Link map output for run (default: ./out/link-map.json)',
     '',
     '  evernote-backup: https://github.com/vzhd1701/evernote-backup',
     '',
