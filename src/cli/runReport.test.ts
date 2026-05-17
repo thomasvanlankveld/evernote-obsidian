@@ -1,14 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { PipelineStepResult } from './pipelineStep.ts';
-import { correlationHintForRun, formatHumanReport, pipelineOk } from './runReport.ts';
+import { formatHumanReport, pipelineOk } from './runReport.ts';
 
 describe('runReport', () => {
-  it('correlationHintForRun strips correlate prefix and report path', () => {
-    const hint = 'correlate: 10 snapshot notes, 2 unmatched — see ./out/correlate-report.json\n';
-    assert.equal(correlationHintForRun(hint), '10 snapshot notes, 2 unmatched');
-  });
-
   it('formatHumanReport shows success and failure lines', () => {
     const okSteps: PipelineStepResult[] = [
       {

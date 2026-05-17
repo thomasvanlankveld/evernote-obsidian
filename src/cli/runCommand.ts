@@ -47,11 +47,10 @@ export interface RunCliOk {
 function stepFromResult(
   id: PipelineStepResult['id'],
   result: StepInvokeResult,
-  statusOverride?: PipelineStepResult['status'],
 ): PipelineStepResult {
   return {
     id,
-    status: statusOverride ?? stepStatusFromExitCode(result.exitCode),
+    status: stepStatusFromExitCode(result.exitCode),
     exitCode: result.exitCode,
     summary: result.summary,
     humanDetail: result.humanDetail,

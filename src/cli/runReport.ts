@@ -196,12 +196,3 @@ export function emitRunReport(
     streams.stdout.write(report);
   }
 }
-
-export function correlationHintForRun(hintLine: string): string {
-  const trimmed = hintLine.replace(/^correlate:\s*/, '').trim();
-  const seeIdx = trimmed.indexOf(' — see ');
-  if (seeIdx >= 0) {
-    return trimmed.slice(0, seeIdx);
-  }
-  return trimmed;
-}

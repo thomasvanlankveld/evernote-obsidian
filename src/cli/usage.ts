@@ -43,7 +43,7 @@ export function usage(): string {
     '',
     '  run defaults to a human-readable step summary on stdout when stdout is a TTY; otherwise (or with --json) it prints one JSON object with per-step summaries.',
     '  --json-steps restores the legacy behavior: one pretty-printed JSON blob per step on stdout.',
-    '  --progress writes step progress lines to stderr (on by default for TTY runs). -q / --quiet limits extra stderr on failure.',
+    '  --progress writes step progress lines to stderr (on by default for TTY runs). -q / --quiet with --json omits the extra "Run failed at …" line on stderr (human TTY output is unchanged).',
     '  With run, --map without --snapshot skips snapshot (and correlate); --db is ignored in that case.',
     '  --map-out                      Link map output for run (default: ./out/link-map.json)',
     '  --report                       On correlate failure, write full JSON detail here (default: ./out/correlate-report.json)',

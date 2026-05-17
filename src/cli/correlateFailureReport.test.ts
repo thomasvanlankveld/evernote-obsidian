@@ -4,6 +4,7 @@ import {
   buildCorrelationFailureSummary,
   correlationFailureCounts,
   correlationFailureFromCorrelateResult,
+  correlationHintForRun,
   formatCorrelationFailureHint,
 } from './correlateFailureReport.ts';
 
@@ -29,5 +30,10 @@ describe('correlateFailureReport', () => {
     assert.equal(summary.counts.unmatched, 2);
     assert.match(formatCorrelationFailureHint(summary), /10 snapshot notes, 2 unmatched/);
     assert.match(formatCorrelationFailureHint(summary), /correlate-report\.json/);
+  });
+
+  it('correlationHintForRun strips correlate prefix and report path', () => {
+    const hint = 'correlate: 10 snapshot notes, 2 unmatched — see ./out/correlate-report.json\n';
+    assert.equal(correlationHintForRun(hint), '10 snapshot notes, 2 unmatched');
   });
 });

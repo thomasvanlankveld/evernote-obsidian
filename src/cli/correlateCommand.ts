@@ -20,11 +20,11 @@ import {
   buildCorrelationFailureSummary,
   correlationFailureFromCorrelateResult,
   correlationFailureFromVaultIndex,
+  correlationHintForRun,
   emitCorrelateFailure,
   formatCorrelationFailureHint,
 } from './correlateFailureReport.ts';
 import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
-import { correlationHintForRun } from './runReport.ts';
 import { resolveVaultRootFromState } from './vaultDirFlag.ts';
 
 export interface CorrelateCliOk {

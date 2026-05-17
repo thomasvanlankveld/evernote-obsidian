@@ -822,6 +822,44 @@ describe('cli main', () => {
     }
   });
 
+  it('run TTY prints human correlate failure on stderr without stdout JSON', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-unmatched-tty-'));
+    const dbPath = join(dir, 'en.db');
+    const reportPath = join(dir, 'out', 'correlate-report.json');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE notes(
+        guid TEXT PRIMARY KEY,
+        title TEXT,
+        notebook_guid TEXT,
+        is_active BOOLEAN,
+        raw_note BLOB
+      );
+      INSERT INTO notes(guid, title, is_active) VALUES ('gx', 'Nope Nope', 1);
+    `);
+    db.close();
+    try {
+      const { streams, out, err } = makeStreams({ stdoutTty: true });
+      const code = await main(['run', '--vault-dir', uniqueFixtureVault, '--db', dbPath], streams, {
+        cwd: dir,
+      });
+      assert.equal(code, 1);
+      assert.equal(parseJsonOutputs(out()).length, 0, 'TTY run failure: no stdout JSON');
+      assert.match(err(), /evernote-obsidian run/);
+      assert.match(err(), /✗ correlate/);
+      assert.match(err(), /1 unmatched/);
+      assert.match(err(), /see .*correlate-report\.json/);
+      assert.match(err(), /Run failed at correlate/);
+      assert.doesNotMatch(err(), /"ok":\s*false/, 'no duplicate correlate failure JSON on stderr');
+      const correlateReportFile = JSON.parse(await readFile(reportPath, 'utf8')) as {
+        unmatched: { guid: string }[];
+      };
+      assert.equal(correlateReportFile.unmatched.length, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('run exits 1 when vault has title collisions (correlate step)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-collision-'));
     const dbPath = join(dir, 'en.db');

@@ -133,6 +133,16 @@ export function formatCorrelationFailureHint(summary: CorrelationFailureSummary)
   return `correlate: ${detail} — see ${reportPath}\n`;
 }
 
+/** Strip correlate stderr hint prefix and report path for unified `run` human lines. */
+export function correlationHintForRun(hintLine: string): string {
+  const trimmed = hintLine.replace(/^correlate:\s*/, '').trim();
+  const seeIdx = trimmed.indexOf(' — see ');
+  if (seeIdx >= 0) {
+    return trimmed.slice(0, seeIdx);
+  }
+  return trimmed;
+}
+
 export async function writeCorrelationFailureReport(
   reportPath: string,
   report: CorrelationFailureReport,
