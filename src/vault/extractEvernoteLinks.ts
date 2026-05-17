@@ -204,8 +204,76 @@ function maskRanges(content: string, ranges: readonly [number, number][]): strin
   return out;
 }
 
-const MD_LINK = /\[([^\]]*)\]\(([^)\s]+)\)/g;
 const AUTOLINK = /<((?:evernote:|https?:\/\/)[^>\s]+)>/gi;
+
+/** Inline `[text](url)` span (CommonMark-style: link text may contain `]` before `](`). */
+export interface MarkdownInlineLinkSpan {
+  readonly fullStart: number;
+  readonly fullEnd: number;
+  readonly text: string;
+  readonly url: string;
+  readonly urlStart: number;
+  readonly urlEnd: number;
+}
+
+/**
+ * Scan `content` for Markdown inline links. Link text is everything between `[` and the
+ * first unescaped `]` immediately followed by `(`. The destination ends at the first `)`
+ * or whitespace (same rule as the former `MD_LINK` regex).
+ */
+export function* scanMarkdownInlineLinks(content: string): Generator<MarkdownInlineLinkSpan> {
+  let i = 0;
+  while (i < content.length) {
+    const open = content.indexOf('[', i);
+    if (open === -1) {
+      return;
+    }
+
+    let j = open + 1;
+    let closeBracket = -1;
+    while (j < content.length) {
+      const ch = content[j];
+      if (ch === '\\' && j + 1 < content.length) {
+        j += 2;
+        continue;
+      }
+      if (ch === ']' && content[j + 1] === '(') {
+        closeBracket = j;
+        break;
+      }
+      j++;
+    }
+    if (closeBracket === -1) {
+      i = open + 1;
+      continue;
+    }
+
+    const urlStart = closeBracket + 2;
+    let k = urlStart;
+    while (k < content.length) {
+      const ch = content[k];
+      if (ch === ')' || ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+        break;
+      }
+      k++;
+    }
+    const url = content.slice(urlStart, k);
+    if (url.length === 0 || k >= content.length || content[k] !== ')') {
+      i = open + 1;
+      continue;
+    }
+
+    yield {
+      fullStart: open,
+      fullEnd: k + 1,
+      text: content.slice(open + 1, closeBracket),
+      url,
+      urlStart,
+      urlEnd: k,
+    };
+    i = k + 1;
+  }
+}
 const WIKILINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
 const BARE_NOTE = /\b(evernote:[^\s)\]]+|https:\/\/www\.evernote\.com\/shard\/[^\s)\]]+)/gi;
@@ -218,21 +286,18 @@ const BARE_OTHER_EVERNOTE = /\bhttps?:\/\/[a-z0-9.-]*evernote\.com(?:\/[^\s)\]]*
 export function mergeEvernoteUrlSpans(content: string): MergedEvernoteUrlSpan[] {
   const spans: Span[] = [];
 
-  for (const m of content.matchAll(MD_LINK)) {
-    const url = m[2];
-    const cls = url !== undefined ? classifyEvernoteUrl(url) : null;
-    if (!url || cls === null) {
+  for (const link of scanMarkdownInlineLinks(content)) {
+    const cls = classifyEvernoteUrl(link.url);
+    if (cls === null) {
       continue;
     }
-    const blockStart = m.index ?? 0;
-    const urlStart = blockStart + m[0].indexOf(url);
     addSpan(spans, {
-      urlStart,
-      urlEnd: urlStart + url.length,
-      replaceStart: blockStart,
-      replaceEnd: blockStart + m[0].length,
-      rawUrl: url,
-      alias: m[1]?.trim() ? m[1] : null,
+      urlStart: link.urlStart,
+      urlEnd: link.urlEnd,
+      replaceStart: link.fullStart,
+      replaceEnd: link.fullEnd,
+      rawUrl: link.url,
+      alias: link.text.trim() ? link.text : null,
     });
   }
 

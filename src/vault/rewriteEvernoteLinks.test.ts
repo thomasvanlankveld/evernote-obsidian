@@ -27,6 +27,15 @@ describe('rewriteMarkdownWithGuidMap', () => {
     assert.match(content, /00000000-0000-0000-0000-000000000000/);
   });
 
+  it('rewrites markdown link when alias contains ]', () => {
+    const map = new Map([['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 'note.md']]);
+    const src =
+      '[See [appendix]](https://www.evernote.com/shard/s308/n/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/x)';
+    const { content, replaced } = rewriteMarkdownWithGuidMap(src, map);
+    assert.equal(replaced, 1);
+    assert.equal(content, '[[note.md|See [appendix]]]');
+  });
+
   it('escapes pipe characters in markdown link alias', () => {
     const map = new Map([['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 'note.md']]);
     const src =

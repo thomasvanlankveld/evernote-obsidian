@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   classifyEvernoteUrl,
   extractEvernoteLinksFromMarkdown,
+  scanMarkdownInlineLinks,
   scanVaultForEvernoteLinks,
   tryParseNoteGuidFromUrl,
 } from './extractEvernoteLinks.ts';
@@ -96,6 +97,33 @@ describe('extractEvernoteLinksFromMarkdown', () => {
     assert.equal(links.length, 1);
     assert.equal(links[0]?.alias, 'Shown name');
     assert.equal(links[0]?.parsedGuid, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+  });
+
+  it('captures markdown link text containing ] before ](', () => {
+    const guid = '99999999-9999-9999-9999-999999999999';
+    const s = `[See section [2]](evernote:///view/153/s308/${guid})`;
+    const links = extractEvernoteLinksFromMarkdown(s, 'x.md');
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.alias, 'See section [2]');
+    assert.equal(links[0]?.parsedGuid, guid);
+  });
+
+  it('captures link text when an early ] is not followed by (', () => {
+    const guid = '88888888-8888-8888-8888-888888888888';
+    const s = `[Bracket] test](https://www.evernote.com/shard/s308/n/${guid}/slug)`;
+    const links = extractEvernoteLinksFromMarkdown(s, 'x.md');
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.alias, 'Bracket] test');
+    assert.equal(links[0]?.parsedGuid, guid);
+  });
+});
+
+describe('scanMarkdownInlineLinks', () => {
+  it('parses simple links', () => {
+    const links = [...scanMarkdownInlineLinks('[simple](https://example.com/a)')];
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.text, 'simple');
+    assert.equal(links[0]?.url, 'https://example.com/a');
   });
 });
 
