@@ -160,6 +160,67 @@ describe('buildVaultIndex', () => {
     }
   });
 
+  it('indexes Importer badLinkRe filename stems for title correlation', async () => {
+    const root = join(here, '__fixtures__', 'importer-titles');
+    const r = await buildVaultIndex(root);
+    assert.equal(r.ok, true);
+    if (!r.ok) {
+      return;
+    }
+    assert.equal(
+      r.byNormalizedTitle.get('running the game 58'),
+      'Running the Game 58.md',
+    );
+    assert.equal(r.byNormalizedTitle.get('3 - episode title'), '3 - Episode title.md');
+    assert.equal(
+      r.byNormalizedTitle.get('rpg - jousting homebrew'),
+      'RPG - Jousting Homebrew.md',
+    );
+    assert.equal(
+      r.byNormalizedTitle.get('lmoph outdated sister garaele'),
+      'LMoPh OUTDATED Sister Garaele.md',
+    );
+
+    const notes: NoteRecord[] = [
+      {
+        guid: 'g-hash-ep',
+        title: 'Running the Game #58',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-leading-hash',
+        title: '#3 - Episode title',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-brackets',
+        title: 'RPG - Jousting [Homebrew]',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-brackets-colon',
+        title: 'LMoPh: [OUTDATED] Sister Garaele',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+    ];
+    const vault = vaultIndexResultToCorrelationInput(
+      r.byNormalizedTitle,
+      r.entries.map((e) => e.path),
+      r.byEvernoteGuid,
+    );
+    const correlated = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(correlated.ok, true);
+    if (correlated.ok) {
+      assert.equal(correlated.guidToPath.get('g-hash-ep'), 'Running the Game 58.md');
+      assert.equal(correlated.guidToPath.get('g-leading-hash'), '3 - Episode title.md');
+      assert.equal(correlated.guidToPath.get('g-brackets'), 'RPG - Jousting Homebrew.md');
+      assert.equal(
+        correlated.guidToPath.get('g-brackets-colon'),
+        'LMoPh OUTDATED Sister Garaele.md',
+      );
+    }
+  });
+
   it('indexes a vault with unique normalized titles', async () => {
     const root = join(here, '__fixtures__', 'unique');
     const r = await buildVaultIndex(root);
