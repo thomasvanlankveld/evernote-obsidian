@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-17 (Importer `badLinkRe` in title normalization for correlate)
+**Last updated:** 2026-05-17 (Importer `badLinkRe` + truncated-prefix correlate)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -100,7 +100,8 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 - **CLI:** `evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]` — default **`./out/link-map.json`**, vault default **`./data`**.
 - **GUID map keys:** Evernote note GUIDs in snapshots, `guidToPath` / `link-map.json`, and override `byGuid` keys are always stored **lowercase** (normalized at ingestion). Link extraction lowercases GUIDs parsed from URLs before lookup; this keeps in-memory and on-disk maps aligned.
 - **Overrides JSON:** `{ "version": 1, "byGuid": { "<guid>": "<vault-relative-path>" } }` — paths must match an indexed `.md` path (POSIX separators). **Evernote duplicate titles** (multiple GUIDs sharing the same normalized title) require **`byGuid` for every GUID** in that group.
-- **Failure cases (exit 1):** vault index title/`evernote-guid` collisions (same as `index`); **unmatched** snapshot rows; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without resolvable GUIDs/overrides; **`guidTitleMismatches`** when frontmatter GUID and title-based resolution disagree. By default stderr shows a one-line hint plus compact counts; full arrays are written to **`./out/correlate-report.json`** (**`--report`**). **`--verbose`** / **`--report-stdout`** also print the full JSON on stderr (legacy scripting).
+- **Truncated filename stems (Option A):** after exact normalized title match fails, allow **one** vault stem that is a **strict prefix** of the snapshot normalized title (Importer/OS truncation; minimum stem length 12). Record matches in **`link-map.json`** `truncatedTitleMatches` and **`correlate-report.json`** (`ok: true`). **Fail closed** when two vault stems qualify (**`truncatedPrefixCollisions`**).
+- **Failure cases (exit 1):** vault index title/`evernote-guid` collisions (same as `index`); **unmatched** snapshot rows; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without resolvable GUIDs/overrides; **`guidTitleMismatches`** when frontmatter GUID and title-based resolution disagree; **`truncatedPrefixCollisions`**. By default stderr shows a one-line hint plus compact counts; full arrays are written to **`./out/correlate-report.json`** (**`--report`**). **`--verbose`** / **`--report-stdout`** also print the full JSON on stderr (legacy scripting).
 
 ### Phase 6 — Rewrite
 
@@ -119,6 +120,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 | Risk                                       | Mitigation                                                           |
 | ------------------------------------------ | -------------------------------------------------------------------- |
 | Title mismatch after Importer sanitization | Importer-aware `normalizeTitle` + override file; full unmatched detail in correlate report file (`--report`; `--verbose` for stderr) |
+| Importer/OS filename truncation (stem shorter than Evernote title) | Unique strict-prefix correlate (min stem 12); audit via `truncatedTitleMatches` / correlate report; ambiguous prefixes fail; else override |
 | Duplicate titles                           | Fail with report; overrides required until unambiguous               |
 | Stale backup vs Obsidian import                    | Re-run `evernote-backup sync` before `snapshot`; document refresh cadence |
 | evernote-backup DB format drift                    | Fail fast on missing `notes` table; pin upstream schema in tests / README     |

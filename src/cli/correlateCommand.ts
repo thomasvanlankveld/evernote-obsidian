@@ -24,6 +24,7 @@ import {
   emitCorrelateFailure,
   formatCorrelateRunDetail,
   formatVaultCorrelateContext,
+  writeCorrelationTruncationReport,
 } from './correlateFailureReport.ts';
 import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
 import { isStdoutTty } from './runOutput.ts';
@@ -272,9 +273,17 @@ export async function runCorrelate(
       parsed.snapshotPath,
       result.guidToPath,
       parsed.overridesPath,
+      result.truncatedMatches,
     );
     await mkdir(dirname(parsed.outPath), { recursive: true });
     await writeFile(parsed.outPath, `${JSON.stringify(linkMap, null, 2)}\n`, 'utf8');
+
+    if (result.truncatedMatches.length > 0) {
+      await writeCorrelationTruncationReport(parsed.reportPath, {
+        ok: true,
+        truncatedTitleMatches: result.truncatedMatches,
+      });
+    }
 
     const summary = {
       ok: true as const,
@@ -282,6 +291,8 @@ export async function runCorrelate(
       vault: parsed.vaultRoot,
       snapshot: parsed.snapshotPath,
       count: result.guidToPath.size,
+      truncatedTitleMatches: result.truncatedMatches.length,
+      ...(result.truncatedMatches.length > 0 ? { correlateReport: parsed.reportPathDisplay } : {}),
     };
     if (invoke?.quiet !== true) {
       streams.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

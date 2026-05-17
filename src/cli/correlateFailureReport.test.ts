@@ -23,6 +23,7 @@ describe('correlateFailureReport', () => {
       invalidOverrides: [],
       duplicateTargetPaths: [],
       guidTitleMismatches: [],
+      truncatedPrefixCollisions: [],
     });
     const counts = correlationFailureCounts(report);
     assert.equal(counts.unmatched, 2);
@@ -61,6 +62,7 @@ describe('correlateFailureReport', () => {
       invalidOverrides: [],
       duplicateTargetPaths: [],
       guidTitleMismatches: [],
+      truncatedPrefixCollisions: [],
     });
     const summary = buildCorrelationFailureSummary(report, './out/correlate-report.json', 1, {
       matchedCount: 0,
