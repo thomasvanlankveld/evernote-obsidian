@@ -8,6 +8,10 @@ export function normalizeEvernoteGuid(guid: string): string {
  * Content is not stored in the snapshot.
  */
 export interface NoteRecord {
+  /**
+   * Evernote note GUID. Lowercase after any ingestion path (`readNoteRecordsFromEvernoteBackupDb`,
+   * `parseSnapshotJson`, `buildSnapshotEnvelope`, etc.); use {@link normalizeEvernoteGuid} for maps.
+   */
   guid: string;
   title: string;
   /**
