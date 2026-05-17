@@ -1,5 +1,5 @@
 import { Writable } from 'node:stream';
-import type { MainStreams } from './main.ts';
+import type { MainStreams } from './cliTypes.ts';
 
 /** Parse one or more pretty-printed JSON objects written to stdout. */
 export function parseJsonOutputs(text: string): unknown[] {
