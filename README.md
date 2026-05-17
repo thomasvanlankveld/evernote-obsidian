@@ -17,7 +17,7 @@ This CLI uses **metadata from a local Evernote backup** ([evernote-backup](https
 
 ### What to pass as `--vault-dir`
 
-`run`, `index`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. **`--vault`** is an equivalent alias.
+`run`, `index`, `guid-backfill`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. **`--vault`** is an equivalent alias.
 
 You can point at:
 
@@ -49,8 +49,9 @@ In a terminal, `run` prints a short human-readable step summary (✓/✗ per ste
 **Step-by-step** (inspect or rerun individual artifacts):
 
 1. **`snapshot`** — read GUID + title from evernote-backup → `evernote-notes.json`
-2. **`correlate`** — match snapshot rows to vault files → `link-map.json`
-3. **`rewrite`** — replace Evernote note URLs with Obsidian wikilinks (`--dry-run` first, then `--out-dir` or `--in-place`)
+2. **`guid-backfill`** *(optional)* — write missing **`evernote-guid:`** frontmatter from the snapshot (see below)
+3. **`correlate`** — match snapshot rows to vault files → `link-map.json`
+4. **`rewrite`** — replace Evernote note URLs with Obsidian wikilinks (`--dry-run` first, then `--out-dir` or `--in-place`)
 
 Optional: **`index`** (preflight title uniqueness), **`links`** (report remaining Evernote URLs without writing).
 
@@ -62,6 +63,8 @@ Optional: **`index`** (preflight title uniqueness), **`links`** (report remainin
 - **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).
 
 - **`evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>] [--map-out <path>] [--report <path>] [--verbose]`** — Join snapshot rows to Markdown under **`--vault-dir`**: match by frontmatter **`evernote-guid:`** when present (line-based YAML subset, same style as `title:`), else **normalized title** with Importer-aware sanitization (same rules as `index`). Writes **`./out/link-map.json`** by default (GUID → path relative to **`--vault-dir`**). **`--map-out`** is an alias for **`--out`**. Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping. On failure, stderr is a compact summary; full detail goes to **`./out/correlate-report.json`** unless **`--report`** is set (**`--verbose`** restores full JSON on stderr).
+
+- **`evernote-obsidian guid-backfill --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--dry-run | --in-place] [--report <path>] [--verbose]`** — After Obsidian import, many notes lack **`evernote-guid:`** in frontmatter. This command correlates the snapshot to vault paths (same rules as **`correlate`**), then for each match inserts a lowercase **`evernote-guid:`** line when missing. Existing matching GUIDs are skipped; a different existing GUID is reported as a **conflict** and never overwritten. **`--dry-run`** is the default (lists paths in the JSON summary); **`--in-place`** writes via atomic replace (same pattern as **`rewrite --in-place`**). Not part of **`run`** — run it explicitly once after import if you want stable GUID-based correlation. Commit or back up the vault first; every touched note is a real file change in Obsidian/git.
 
 - **`evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]`** — Scan Markdown under **`--vault-dir`** for **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` links for reporting). Default is JSON on stdout; **`--out`** writes a report file.
 

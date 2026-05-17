@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -292,6 +292,125 @@ describe('cli main', () => {
       assert.equal(map.guidToPath.g1, 'first.md');
       assert.equal(map.guidToPath.g2, 'sub/second note.md');
       assert.equal(map.guidToPath.g3, 'third.md');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('guid-backfill exits 2 when --snapshot is missing', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['guid-backfill'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /--snapshot/);
+  });
+
+  it('guid-backfill dry-run lists paths that would be updated', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-guid-backfill-dry-'));
+    const snapPath = join(dir, 'evernote-notes.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [
+        { guid: 'g1', title: 'First', updated: '1970-01-01T00:00:00.000Z' },
+        { guid: 'g2', title: 'Second Note', updated: '1970-01-01T00:00:00.000Z' },
+        { guid: 'g3', title: 'Quoted Title', updated: '1970-01-01T00:00:00.000Z' },
+      ],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['guid-backfill', '--vault-dir', uniqueFixtureVault, '--snapshot', snapPath],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.equal(err(), '');
+      const summary = JSON.parse(out()) as {
+        ok: boolean;
+        mode: string;
+        wouldUpdate: string[];
+        updated: number;
+      };
+      assert.equal(summary.ok, true);
+      assert.equal(summary.mode, 'dry-run');
+      assert.equal(summary.updated, 0);
+      assert.deepEqual(summary.wouldUpdate.sort(), ['first.md', 'sub/second note.md', 'third.md']);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('guid-backfill --in-place writes evernote-guid frontmatter', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-guid-backfill-inplace-'));
+    const vaultDir = join(dir, 'vault');
+    await cp(uniqueFixtureVault, vaultDir, { recursive: true });
+    const snapPath = join(dir, 'evernote-notes.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [{ guid: 'g1', title: 'First', updated: '1970-01-01T00:00:00.000Z' }],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, out } = makeStreams();
+      const code = await main(
+        ['guid-backfill', '--vault-dir', vaultDir, '--snapshot', snapPath, '--in-place'],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      const summary = JSON.parse(out()) as { updated: number };
+      assert.equal(summary.updated, 1);
+      const body = await readFile(join(vaultDir, 'first.md'), 'utf8');
+      assert.match(body, /^---\nevernote-guid: g1\n---\n\n# First/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('guid-backfill exits 1 on GUID mismatch', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-guid-backfill-conflict-'));
+    const vaultDir = join(dir, 'vault');
+    const overridesPath = join(dir, 'overrides.json');
+    await mkdir(vaultDir, { recursive: true });
+    await writeFile(join(vaultDir, 'note.md'), '---\nevernote-guid: other-guid\n---\n\n', 'utf8');
+    await writeFile(
+      overridesPath,
+      `${JSON.stringify({ version: 1, byGuid: { g1: 'note.md' } })}\n`,
+      'utf8',
+    );
+    const snapPath = join(dir, 'evernote-notes.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [{ guid: 'g1', title: 'Note', updated: '1970-01-01T00:00:00.000Z' }],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, out } = makeStreams();
+      const code = await main(
+        [
+          'guid-backfill',
+          '--vault-dir',
+          vaultDir,
+          '--snapshot',
+          snapPath,
+          '--overrides',
+          overridesPath,
+        ],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 1);
+      const summary = JSON.parse(out()) as { conflicts: number; conflictDetails: unknown[] };
+      assert.equal(summary.conflicts, 1);
+      assert.equal(summary.conflictDetails.length, 1);
+      const body = await readFile(join(vaultDir, 'note.md'), 'utf8');
+      assert.match(body, /evernote-guid: other-guid/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
