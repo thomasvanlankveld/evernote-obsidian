@@ -721,14 +721,7 @@ describe('cli main', () => {
     try {
       const { streams, out, err } = makeStreams();
       const code = await main(
-        [
-          'rewrite',
-          '--vault-dir',
-          uniqueFixtureVault,
-          '--map',
-          mapPath,
-          '--dry-run',
-        ],
+        ['rewrite', '--vault-dir', uniqueFixtureVault, '--map', mapPath, '--dry-run'],
         streams,
         { cwd: dir },
       );
@@ -742,15 +735,7 @@ describe('cli main', () => {
       assert.equal(after, before);
 
       const outCode = await main(
-        [
-          'rewrite',
-          '--vault-dir',
-          uniqueFixtureVault,
-          '--map',
-          mapPath,
-          '--out-dir',
-          outVault,
-        ],
+        ['rewrite', '--vault-dir', uniqueFixtureVault, '--map', mapPath, '--out-dir', outVault],
         streams,
         { cwd: dir },
       );

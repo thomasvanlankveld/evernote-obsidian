@@ -54,9 +54,7 @@ describe('parseLinkMapJson', () => {
 
 describe('assertLinkMapVaultRootMatches', () => {
   it('accepts matching resolved vault roots', () => {
-    assert.doesNotThrow(() =>
-      assertLinkMapVaultRootMatches({ vaultRoot: '/vault/a' }, '/vault/a'),
-    );
+    assert.doesNotThrow(() => assertLinkMapVaultRootMatches({ vaultRoot: '/vault/a' }, '/vault/a'));
   });
 
   it('throws when vault roots differ', () => {
