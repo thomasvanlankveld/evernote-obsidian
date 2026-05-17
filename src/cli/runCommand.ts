@@ -198,7 +198,9 @@ export async function runRun(
   const resolvedOutput = resolveRunOutput(parsed.output, streams);
   const quietSteps = resolvedOutput.mode !== 'json-steps';
   const invokeBase: StepInvokeContext = {
+    cwd,
     quiet: quietSteps,
+    interactive: resolvedOutput.mode === 'human',
     progress: resolvedOutput.progress,
     onProgress: (line) => {
       streams.stderr.write(line);

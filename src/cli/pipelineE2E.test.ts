@@ -123,7 +123,8 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         { cwd: work },
       );
       assert.equal(corrCode, 0, corrStreams.err());
-      assert.equal(corrStreams.err(), '');
+      assert.match(corrStreams.err(), /Vault: 2 markdown files/);
+      assert.match(corrStreams.err(), /Evernote: 1 note in snapshot/);
       const corrSummary = JSON.parse(corrStreams.out()) as { ok: boolean; count: number };
       assert.equal(corrSummary.ok, true);
       assert.equal(corrSummary.count, 1);
@@ -196,7 +197,12 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         { cwd: work },
       );
       assert.equal(runCode, 0, `run subcommand: ${runStreams.err()}`);
-      assert.equal(runStreams.err(), '', 'run subcommand: stderr');
+      assert.match(runStreams.err(), /Vault: 2 markdown files/, 'run subcommand: vault context');
+      assert.match(
+        runStreams.err(),
+        /Evernote: 1 note in snapshot/,
+        'run subcommand: Evernote context',
+      );
 
       const runReport = JSON.parse(runStreams.out()) as {
         ok: boolean;
@@ -264,7 +270,16 @@ describe('pipeline snapshot → correlate → rewrite', () => {
         { cwd: work },
       );
       assert.equal(runCode, 0, `run uppercase guid: ${runStreams.err()}`);
-      assert.equal(runStreams.err(), '', 'run uppercase guid: stderr');
+      assert.match(
+        runStreams.err(),
+        /Vault: 2 markdown files/,
+        'run uppercase guid: vault context',
+      );
+      assert.match(
+        runStreams.err(),
+        /Evernote: 1 note in snapshot/,
+        'run uppercase guid: Evernote context',
+      );
 
       const runReport = JSON.parse(runStreams.out()) as {
         ok: boolean;
