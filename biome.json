@@ -7,7 +7,6 @@
       "!node_modules",
       "!data",
       "!out",
-      "!.worktrees",
       "!package-lock.json"
     ]
   },

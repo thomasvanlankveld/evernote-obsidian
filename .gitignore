@@ -18,6 +18,3 @@ node_modules/
 # Build / tool output (add paths here as the project grows)
 /dist/
 /out/
-
-# Legacy in-repo worktrees (pre-Cursor default); safe to delete locally
-.worktrees/
