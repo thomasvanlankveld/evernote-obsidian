@@ -12,6 +12,7 @@ import { parseLinksArgs, runLinks } from './linksCommand.ts';
 import { parseRewriteArgs, runRewrite } from './rewriteCommand.ts';
 import { parseRunArgs, runRun } from './runCommand.ts';
 import { parseSnapshotArgs, runSnapshot } from './snapshotCommand.ts';
+import { parseUnescapeLinksArgs, runUnescapeLinks } from './unescapeLinksCommand.ts';
 import { cliVersion, usage } from './usage.ts';
 
 export async function main(
@@ -75,6 +76,15 @@ export async function main(
       return 2;
     }
     return runRewrite(parsed.rewrite, streams);
+  }
+
+  if (cmd === 'unescape-links') {
+    const parsed = parseUnescapeLinksArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runUnescapeLinks(parsed.unescape, streams);
   }
 
   if (cmd === 'fix-resources') {

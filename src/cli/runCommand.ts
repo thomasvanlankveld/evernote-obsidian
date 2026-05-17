@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import {
+  exactFlagHandler,
   pathFlagHandler,
   positiveIntFlagHandler,
   rewriteOutputModeArgHandlers,
@@ -16,6 +17,7 @@ import {
 import { runFixResources } from './fixResourcesCommand.ts';
 import { type RewriteCliOk, runRewrite } from './rewriteCommand.ts';
 import { runSnapshot } from './snapshotCommand.ts';
+import { runUnescapeLinks } from './unescapeLinksCommand.ts';
 
 export interface RunCliOk {
   vaultRoot: string;
@@ -29,6 +31,7 @@ export interface RunCliOk {
   correlateReportPath: string;
   correlateReportPathDisplay: string;
   correlateVerbose: boolean;
+  skipUnescapeLinks: boolean;
   rewrite: Omit<RewriteCliOk, 'mapPath' | 'vaultRoot'>;
 }
 
@@ -48,11 +51,15 @@ export function parseRunArgs(
   let maxRecords: number | undefined;
   const rewriteOutput = createRewriteOutputScanState();
   const correlateOutput: { reportPath?: string | undefined; verbose: boolean } = { verbose: false };
+  let skipUnescapeLinks = false;
 
   const scanned = scanArgv(args, cwd, {
     subcommand: 'run',
     handlers: [
       vaultDirArgHandler(),
+      exactFlagHandler('--skip-unescape-links', () => {
+        skipUnescapeLinks = true;
+      }),
       pathFlagHandler('db', './en_backup.db', (path) => {
         dbPath = path;
       }),
@@ -124,6 +131,7 @@ export function parseRunArgs(
       correlateReportPath,
       correlateReportPathDisplay: reportPathForDisplay(correlateReportPath, cwd),
       correlateVerbose: correlateOutput.verbose,
+      skipUnescapeLinks,
       rewrite: {
         mode: modeParsed.mode,
         outDir: modeParsed.outDir,
@@ -179,6 +187,27 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
     mapPath = parsed.mapOutPath;
   }
 
+  if (!parsed.skipUnescapeLinks) {
+    const code = await runUnescapeLinks(
+      {
+        vaultRoot: parsed.vaultRoot,
+        mode: parsed.rewrite.mode,
+        outDir: parsed.rewrite.outDir,
+        backup: parsed.rewrite.backup,
+        onlyPrefixes: [],
+      },
+      streams,
+    );
+    if (code !== 0) {
+      return code;
+    }
+  }
+
+  const overlayReadRoot =
+    parsed.rewrite.mode === 'out-dir' && !parsed.skipUnescapeLinks
+      ? parsed.rewrite.outDir
+      : undefined;
+
   const rewriteCode = await runRewrite(
     {
       vaultRoot: parsed.vaultRoot,
@@ -186,6 +215,7 @@ export async function runRun(parsed: RunCliOk, streams: MainStreams): Promise<nu
       mode: parsed.rewrite.mode,
       outDir: parsed.rewrite.outDir,
       backup: parsed.rewrite.backup,
+      overlayReadRoot,
     },
     streams,
   );

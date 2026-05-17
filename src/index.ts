@@ -51,6 +51,14 @@ export {
 export type { RewriteMarkdownResult } from './vault/rewriteEvernoteLinks.ts';
 export { rewriteMarkdownWithGuidMap } from './vault/rewriteEvernoteLinks.ts';
 export type {
+  UnescapeMarkdownLinkChange,
+  UnescapeMarkdownLinksResult,
+} from './vault/unescapeMarkdownLinks.ts';
+export {
+  isExternalMarkdownLinkUrl,
+  unescapeMarkdownLinksInContent,
+} from './vault/unescapeMarkdownLinks.ts';
+export type {
   VaultIndexCollision,
   VaultIndexEntry,
   VaultIndexGuidCollision,

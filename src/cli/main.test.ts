@@ -405,6 +405,20 @@ describe('cli main', () => {
     assert.match(err(), /unknown rewrite flag/);
   });
 
+  it('unescape-links is documented in usage', async () => {
+    const { streams, out } = makeStreams();
+    const code = await main(['--help'], streams);
+    assert.equal(code, 0);
+    assert.match(out(), /unescape-links/);
+  });
+
+  it('unescape-links exits 2 on unknown flag', async () => {
+    const { streams, err } = makeStreams();
+    const code = await main(['unescape-links', '--nope'], streams);
+    assert.equal(code, 2);
+    assert.match(err(), /unknown unescape-links flag/);
+  });
+
   it('rewrite exits 2 when --dry-run is combined with --out-dir', async () => {
     const { streams, err } = makeStreams();
     const code = await main(
@@ -564,11 +578,13 @@ describe('cli main', () => {
       assert.equal(err(), '');
 
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 4);
+      assert.equal(summaries.length, 5);
       const snapSummary = summaries[0] as { ok: boolean; count: number };
       const corrSummary = summaries[1] as { ok: boolean; count: number };
-      const rewriteSummary = summaries[2] as { mode: string; wroteFiles: boolean };
-      const fixResourcesSummary = summaries[3] as { mode: string; wroteFiles: boolean };
+      const unescapeSummary = summaries[2] as { replacements: number };
+      const rewriteSummary = summaries[3] as { mode: string; wroteFiles: boolean };
+      const fixResourcesSummary = summaries[4] as { mode: string; wroteFiles: boolean };
+      assert.equal(unescapeSummary.replacements, 0);
       assert.equal(snapSummary.ok, true);
       assert.equal(snapSummary.count, 3);
       assert.equal(corrSummary.ok, true);
@@ -610,7 +626,7 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 3);
+      assert.equal(summaries.length, 4);
       const corrSummary = summaries[0] as { ok: boolean };
       assert.equal(corrSummary.ok, true);
     } finally {
@@ -644,7 +660,7 @@ describe('cli main', () => {
       assert.match(err(), /--map skips the snapshot step/);
       assert.match(err(), /--db is ignored/);
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 2);
+      assert.equal(summaries.length, 3);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -673,8 +689,8 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 2);
-      const rewriteSummary = summaries[0] as {
+      assert.equal(summaries.length, 3);
+      const rewriteSummary = summaries[1] as {
         mode: string;
         replacements: number;
         filesChanged: number;
@@ -716,8 +732,8 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 2);
-      assert.equal((summaries[0] as { mode: string }).mode, 'dry-run');
+      assert.equal(summaries.length, 3);
+      assert.equal((summaries[1] as { mode: string }).mode, 'dry-run');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -830,7 +846,7 @@ describe('cli main', () => {
     const code = await main([], streams);
     assert.equal(code, 0);
     assert.match(out(), /\brun\b/);
-    assert.match(out(), /snapshot → correlate → rewrite → fix-resources/);
+    assert.match(out(), /snapshot → correlate → unescape-links → rewrite → fix-resources/);
     assert.match(out(), /\[--db <path>\]/);
   });
 
@@ -860,8 +876,8 @@ describe('cli main', () => {
       assert.equal(code, 0);
       assert.equal(err(), '');
       const summaries = parseJsonOutputs(out());
-      assert.equal(summaries.length, 2);
-      const summary = summaries[0] as { mode: string; wroteFiles: boolean };
+      assert.equal(summaries.length, 3);
+      const summary = summaries[1] as { mode: string; wroteFiles: boolean };
       assert.equal(summary.mode, 'out-dir');
       assert.equal(summary.wroteFiles, true);
       const mixed = await readFile(join(outVault, 'mixed.md'), 'utf8');
