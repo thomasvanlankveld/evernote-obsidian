@@ -167,15 +167,9 @@ describe('buildVaultIndex', () => {
     if (!r.ok) {
       return;
     }
-    assert.equal(
-      r.byNormalizedTitle.get('running the game 58'),
-      'Running the Game 58.md',
-    );
+    assert.equal(r.byNormalizedTitle.get('running the game 58'), 'Running the Game 58.md');
     assert.equal(r.byNormalizedTitle.get('3 - episode title'), '3 - Episode title.md');
-    assert.equal(
-      r.byNormalizedTitle.get('rpg - jousting homebrew'),
-      'RPG - Jousting Homebrew.md',
-    );
+    assert.equal(r.byNormalizedTitle.get('rpg - jousting homebrew'), 'RPG - Jousting Homebrew.md');
     assert.equal(
       r.byNormalizedTitle.get('lmoph outdated sister garaele'),
       'LMoPh OUTDATED Sister Garaele.md',
