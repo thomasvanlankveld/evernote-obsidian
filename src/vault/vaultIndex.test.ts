@@ -48,6 +48,34 @@ describe('normalizeTitle', () => {
       'lmoph leeuwenschild koster (…)',
     );
   });
+
+  it('removes Importer badLinkRe characters (#, brackets, pipe, caret)', () => {
+    assert.equal(normalizeTitle('Running the Game #58'), 'running the game 58');
+    assert.equal(normalizeTitle('#3 - Episode title'), '3 - episode title');
+    assert.equal(normalizeTitle('RPG - Jousting [Homebrew]'), 'rpg - jousting homebrew');
+    assert.equal(
+      normalizeTitle('LMoPh: [OUTDATED] Sister Garaele'),
+      'lmoph outdated sister garaele',
+    );
+  });
+});
+
+describe('normalizeTitle badLink collisions', () => {
+  it('detects Evernote title collisions when badLink stripping collapses distinct titles', () => {
+    const notes: NoteRecord[] = [
+      { guid: 'g-a', title: 'Note [A]', updated: '1970-01-01T00:00:00.000Z' },
+      { guid: 'g-b', title: 'Note A', updated: '1970-01-01T00:00:00.000Z' },
+    ];
+    const vault = vaultIndexResultToCorrelationInput(new Map(), []);
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, false);
+    if (r.ok) {
+      return;
+    }
+    assert.equal(r.evernoteTitleCollisions.length, 1);
+    assert.equal(r.evernoteTitleCollisions[0]?.normalizedTitle, 'note a');
+    assert.deepEqual(r.evernoteTitleCollisions[0]?.guids.sort(), ['g-a', 'g-b']);
+  });
 });
 
 describe('parseFrontmatterTitle', () => {
@@ -129,6 +157,61 @@ describe('buildVaultIndex', () => {
     if (correlated.ok) {
       assert.equal(correlated.guidToPath.get('g-colon'), 'Coming Down to Earth What if….md');
       assert.equal(correlated.guidToPath.get('g-slash'), 'Lydian & Mixolydian Scales - Modes.md');
+    }
+  });
+
+  it('indexes Importer badLinkRe filename stems for title correlation', async () => {
+    const root = join(here, '__fixtures__', 'importer-titles');
+    const r = await buildVaultIndex(root);
+    assert.equal(r.ok, true);
+    if (!r.ok) {
+      return;
+    }
+    assert.equal(r.byNormalizedTitle.get('running the game 58'), 'Running the Game 58.md');
+    assert.equal(r.byNormalizedTitle.get('3 - episode title'), '3 - Episode title.md');
+    assert.equal(r.byNormalizedTitle.get('rpg - jousting homebrew'), 'RPG - Jousting Homebrew.md');
+    assert.equal(
+      r.byNormalizedTitle.get('lmoph outdated sister garaele'),
+      'LMoPh OUTDATED Sister Garaele.md',
+    );
+
+    const notes: NoteRecord[] = [
+      {
+        guid: 'g-hash-ep',
+        title: 'Running the Game #58',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-leading-hash',
+        title: '#3 - Episode title',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-brackets',
+        title: 'RPG - Jousting [Homebrew]',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+      {
+        guid: 'g-brackets-colon',
+        title: 'LMoPh: [OUTDATED] Sister Garaele',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+    ];
+    const vault = vaultIndexResultToCorrelationInput(
+      r.byNormalizedTitle,
+      r.entries.map((e) => e.path),
+      r.byEvernoteGuid,
+    );
+    const correlated = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(correlated.ok, true);
+    if (correlated.ok) {
+      assert.equal(correlated.guidToPath.get('g-hash-ep'), 'Running the Game 58.md');
+      assert.equal(correlated.guidToPath.get('g-leading-hash'), '3 - Episode title.md');
+      assert.equal(correlated.guidToPath.get('g-brackets'), 'RPG - Jousting Homebrew.md');
+      assert.equal(
+        correlated.guidToPath.get('g-brackets-colon'),
+        'LMoPh OUTDATED Sister Garaele.md',
+      );
     }
   });
 
