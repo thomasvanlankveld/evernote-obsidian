@@ -49,6 +49,8 @@ async function seedPipelineVault(vaultRoot: string): Promise<void> {
       '',
       `See [My alias](https://www.evernote.com/shard/s308/n/${TARGET_GUID}/title-slug).`,
       '',
+      '![[Evernote/Writings/_resources/clip.png]]',
+      '',
     ].join('\n'),
     'utf8',
   );
@@ -76,6 +78,8 @@ async function assertPipelineArtifacts(
   const rewritten = await readFile(join(outVault, 'links.md'), 'utf8');
   assert.match(rewritten, /\[\[target note\.md\|My alias\]\]/, `${label}: rewritten wikilink`);
   assert.doesNotMatch(rewritten, /evernote\.com/, `${label}: no evernote.com in output`);
+  assert.match(rewritten, /!\[\[_resources\/clip\.png\]\]/, `${label}: resource embed path`);
+  assert.doesNotMatch(rewritten, /Evernote\/Writings\/_resources/, `${label}: no importer prefix`);
 }
 
 describe('pipeline snapshot → correlate → rewrite', () => {
@@ -143,6 +147,17 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(rewriteSummary.filesChanged, 1, 'step-by-step rewrite: filesChanged');
       assert.equal(rewriteSummary.replacements, 1, 'step-by-step rewrite: replacements');
 
+      const fixStreams = makeStreams();
+      const fixCode = await main(
+        ['fix-resources', '--vault-dir', vaultRoot, '--out-dir', outVault],
+        fixStreams.streams,
+        { cwd: work },
+      );
+      assert.equal(fixCode, 0, `step-by-step fix-resources: ${fixStreams.err()}`);
+      assert.equal(fixStreams.err(), '', 'step-by-step fix-resources: stderr');
+      const fixSummary = JSON.parse(fixStreams.out()) as { replacements: number };
+      assert.equal(fixSummary.replacements, 1, 'step-by-step fix-resources: replacements');
+
       await assertPipelineArtifacts(snapshotPath, mapPath, outVault, 'step-by-step');
     } finally {
       await rm(work, { recursive: true, force: true });
@@ -183,10 +198,16 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(runStreams.err(), '', 'run subcommand: stderr');
 
       const summaries = parseJsonOutputs(runStreams.out());
-      assert.equal(summaries.length, 3, 'run subcommand: stdout JSON summary count');
+      assert.equal(summaries.length, 4, 'run subcommand: stdout JSON summary count');
       const snapSummary = summaries[0] as { ok: boolean; count: number };
       const corrSummary = summaries[1] as { ok: boolean; count: number };
       const rewriteSummary = summaries[2] as {
+        mode: string;
+        filesChanged: number;
+        replacements: number;
+        wroteFiles: boolean;
+      };
+      const fixResourcesSummary = summaries[3] as {
         mode: string;
         filesChanged: number;
         replacements: number;
@@ -200,6 +221,22 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(rewriteSummary.wroteFiles, true, 'run subcommand: wroteFiles');
       assert.equal(rewriteSummary.filesChanged, 1, 'run subcommand: filesChanged');
       assert.equal(rewriteSummary.replacements, 1, 'run subcommand: replacements');
+      assert.equal(fixResourcesSummary.mode, 'out-dir', 'run subcommand: fix-resources mode');
+      assert.equal(
+        fixResourcesSummary.wroteFiles,
+        true,
+        'run subcommand: fix-resources wroteFiles',
+      );
+      assert.equal(
+        fixResourcesSummary.filesChanged,
+        1,
+        'run subcommand: fix-resources filesChanged',
+      );
+      assert.equal(
+        fixResourcesSummary.replacements,
+        1,
+        'run subcommand: fix-resources replacements',
+      );
 
       await assertPipelineArtifacts(snapshotPath, mapPath, outVault, 'run subcommand');
     } finally {
@@ -241,9 +278,15 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(runStreams.err(), '', 'run uppercase guid: stderr');
 
       const summaries = parseJsonOutputs(runStreams.out());
-      assert.equal(summaries.length, 3);
+      assert.equal(summaries.length, 4);
       const rewriteSummary = summaries[2] as { replacements: number };
+      const fixResourcesSummary = summaries[3] as { replacements: number };
       assert.equal(rewriteSummary.replacements, 1, 'run uppercase guid: replacements');
+      assert.equal(
+        fixResourcesSummary.replacements,
+        1,
+        'run uppercase guid: fix-resources replacements',
+      );
 
       await assertPipelineArtifacts(snapshotPath, mapPath, outVault, 'run uppercase guid');
     } finally {
