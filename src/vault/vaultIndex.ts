@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { normalizeEvernoteGuid } from '../evernote/noteRecord.ts';
 
 export interface VaultIndexEntry {
   /** Path relative to vault root, POSIX separators */
@@ -7,6 +8,8 @@ export interface VaultIndexEntry {
   /** Title from YAML `title` or filename stem */
   title: string;
   normalizedTitle: string;
+  /** Lowercase Evernote note GUID from frontmatter `evernote-guid:` when present */
+  evernoteGuid?: string | undefined;
 }
 
 export interface VaultIndexCollision {
@@ -14,9 +17,19 @@ export interface VaultIndexCollision {
   paths: string[];
 }
 
+export interface VaultIndexGuidCollision {
+  evernoteGuid: string;
+  paths: string[];
+}
+
 export type VaultIndexResult =
-  | { ok: true; entries: VaultIndexEntry[]; byNormalizedTitle: ReadonlyMap<string, string> }
-  | { ok: false; collisions: VaultIndexCollision[] };
+  | {
+      ok: true;
+      entries: VaultIndexEntry[];
+      byNormalizedTitle: ReadonlyMap<string, string>;
+      byEvernoteGuid: ReadonlyMap<string, string>;
+    }
+  | { ok: false; collisions: VaultIndexCollision[]; guidCollisions: VaultIndexGuidCollision[] };
 
 const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.obsidian', '.trash']);
 
@@ -28,24 +41,49 @@ export function normalizeTitle(raw: string): string {
   return nfc.replace(/\s+/g, ' ');
 }
 
+/** Frontmatter key for Evernote note GUID correlation (line-based YAML subset). */
+export const EVERNOTE_GUID_FRONTMATTER_KEY = 'evernote-guid';
+
 /**
  * If the file starts with YAML frontmatter, return the `title:` value when present.
  * v1 is a **line-based subset** only: first `title:` line with a simple scalar (optional
  * single-line quotes). Not a full YAML parser (no block scalars, aliases, or other keys).
  */
 export function parseFrontmatterTitle(content: string): string | undefined {
-  const start = content.startsWith('\uFEFF') ? content.slice(1) : content;
-  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(start);
-  if (!m?.[1]) {
+  const block = parseFrontmatterBlock(content);
+  if (block === undefined) {
     return undefined;
   }
-  return extractYamlTitle(m[1]);
+  return extractYamlScalar(block, 'title');
 }
 
-function extractYamlTitle(block: string): string | undefined {
+/**
+ * If the file starts with YAML frontmatter, return the `evernote-guid:` value when present.
+ * Same line-based scalar rules as {@link parseFrontmatterTitle}. GUIDs are normalized to lowercase.
+ */
+export function parseFrontmatterEvernoteGuid(content: string): string | undefined {
+  const block = parseFrontmatterBlock(content);
+  if (block === undefined) {
+    return undefined;
+  }
+  const raw = extractYamlScalar(block, EVERNOTE_GUID_FRONTMATTER_KEY);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  return trimmed === '' ? undefined : normalizeEvernoteGuid(trimmed);
+}
+
+function parseFrontmatterBlock(content: string): string | undefined {
+  const start = content.startsWith('\uFEFF') ? content.slice(1) : content;
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(start);
+  return m?.[1];
+}
+
+function extractYamlScalar(block: string, key: string): string | undefined {
   const lines = block.split(/\r?\n/);
   for (const line of lines) {
-    const m = /^title:\s*(.+)$/.exec(line);
+    const m = new RegExp(`^${escapeRegExp(key)}:\\s*(.+)$`).exec(line);
     if (!m?.[1]) {
       continue;
     }
@@ -56,6 +94,10 @@ function extractYamlTitle(block: string): string | undefined {
     return v.trim() || undefined;
   }
   return undefined;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function toVaultRelative(vaultRoot: string, absoluteFile: string): string {
@@ -136,7 +178,8 @@ export async function buildVaultIndex(vaultRoot: string): Promise<VaultIndexResu
     const fileName = parts[parts.length - 1] ?? rel;
     const title = fmTitle ?? stemFromFilename(fileName);
     const normalizedTitle = normalizeTitle(title);
-    entries.push({ path: rel, title, normalizedTitle });
+    const evernoteGuid = parseFrontmatterEvernoteGuid(raw);
+    entries.push({ path: rel, title, normalizedTitle, evernoteGuid });
   }
 
   const byNorm = new Map<string, string[]>();
@@ -156,14 +199,39 @@ export async function buildVaultIndex(vaultRoot: string): Promise<VaultIndexResu
     }
   }
 
-  if (collisions.length > 0) {
+  const byGuid = new Map<string, string[]>();
+  for (const e of entries) {
+    if (e.evernoteGuid === undefined) {
+      continue;
+    }
+    const list = byGuid.get(e.evernoteGuid);
+    if (list) {
+      list.push(e.path);
+    } else {
+      byGuid.set(e.evernoteGuid, [e.path]);
+    }
+  }
+
+  const guidCollisions: VaultIndexGuidCollision[] = [];
+  for (const [evernoteGuid, paths] of byGuid) {
+    if (paths.length > 1) {
+      guidCollisions.push({ evernoteGuid, paths: [...paths].sort() });
+    }
+  }
+
+  if (collisions.length > 0 || guidCollisions.length > 0) {
     collisions.sort((a, b) => a.normalizedTitle.localeCompare(b.normalizedTitle));
-    return { ok: false, collisions };
+    guidCollisions.sort((a, b) => a.evernoteGuid.localeCompare(b.evernoteGuid));
+    return { ok: false, collisions, guidCollisions };
   }
 
   const map = new Map<string, string>();
+  const guidMap = new Map<string, string>();
   for (const e of entries) {
     map.set(e.normalizedTitle, e.path);
+    if (e.evernoteGuid !== undefined) {
+      guidMap.set(e.evernoteGuid, e.path);
+    }
   }
-  return { ok: true, entries, byNormalizedTitle: map };
+  return { ok: true, entries, byNormalizedTitle: map, byEvernoteGuid: guidMap };
 }

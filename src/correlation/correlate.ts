@@ -23,6 +23,15 @@ export interface DuplicateTargetPath {
   guids: string[];
 }
 
+export interface GuidTitleMismatch {
+  guid: string;
+  title: string;
+  reason: 'paths_differ' | 'vault_guid_differs';
+  guidPath?: string | undefined;
+  titlePath?: string | undefined;
+  vaultGuid?: string | undefined;
+}
+
 export type CorrelateResult =
   | { ok: true; guidToPath: ReadonlyMap<string, string> }
   | {
@@ -31,24 +40,34 @@ export type CorrelateResult =
       unmatched: UnmatchedNote[];
       invalidOverrides: InvalidOverride[];
       duplicateTargetPaths: DuplicateTargetPath[];
+      guidTitleMismatches: GuidTitleMismatch[];
     };
 
 export interface VaultIndexForCorrelation {
   byNormalizedTitle: ReadonlyMap<string, string>;
+  byEvernoteGuid: ReadonlyMap<string, string>;
+  /** Vault-relative path → lowercase Evernote GUID when frontmatter declares one */
+  pathToEvernoteGuid: ReadonlyMap<string, string>;
   indexedPaths: ReadonlySet<string>;
 }
 
 export function vaultIndexResultToCorrelationInput(
   byNormalizedTitle: ReadonlyMap<string, string>,
   paths: readonly string[],
+  byEvernoteGuid: ReadonlyMap<string, string> = new Map(),
+  pathToEvernoteGuid: ReadonlyMap<string, string> = new Map(),
 ): VaultIndexForCorrelation {
-  return { byNormalizedTitle, indexedPaths: new Set(paths) };
+  return {
+    byNormalizedTitle,
+    byEvernoteGuid,
+    pathToEvernoteGuid,
+    indexedPaths: new Set(paths),
+  };
 }
 
 /**
- * Join Evernote snapshot rows to vault paths by {@link normalizeTitle} on note titles,
- * with optional per-GUID overrides. Multiple Evernote GUIDs sharing the same normalized title
- * require an explicit override for every GUID in that group.
+ * Join Evernote snapshot rows to vault paths: **GUID from vault frontmatter** when present,
+ * else {@link normalizeTitle} on note titles, with optional per-GUID overrides.
  */
 export function correlateSnapshotToGuidPaths(
   notes: readonly NoteRecord[],
@@ -60,20 +79,10 @@ export function correlateSnapshotToGuidPaths(
     overrides.set(normalizeEvernoteGuid(guid), path);
   }
 
-  const buckets = new Map<string, NoteRecord[]>();
-  for (const n of notes) {
-    const key = normalizeTitle(n.title);
-    const list = buckets.get(key);
-    if (list) {
-      list.push(n);
-    } else {
-      buckets.set(key, [n]);
-    }
-  }
-
   const evernoteTitleCollisions: EvernoteTitleCollision[] = [];
   const unmatched: UnmatchedNote[] = [];
   const invalidOverrides: InvalidOverride[] = [];
+  const guidTitleMismatches: GuidTitleMismatch[] = [];
   const guidToPath = new Map<string, string>();
 
   const resolvePath = (guid: string, rel: string): string | undefined => {
@@ -90,39 +99,50 @@ export function correlateSnapshotToGuidPaths(
     return path;
   };
 
-  for (const [, group] of buckets) {
-    if (group.length > 1) {
-      const withoutOverride = group.filter((n) => !overrides.has(normalizeEvernoteGuid(n.guid)));
-      if (withoutOverride.length > 0) {
-        const head = group[0];
-        if (head === undefined) {
-          continue;
-        }
-        evernoteTitleCollisions.push({
-          normalizedTitle: normalizeTitle(head.title),
-          guids: group.map((n) => normalizeEvernoteGuid(n.guid)).sort(),
-        });
+  const titleBuckets = new Map<string, NoteRecord[]>();
+  for (const n of notes) {
+    const key = normalizeTitle(n.title);
+    const list = titleBuckets.get(key);
+    if (list) {
+      list.push(n);
+    } else {
+      titleBuckets.set(key, [n]);
+    }
+  }
+
+  const needsTitleOnlyResolution = (n: NoteRecord): boolean => {
+    const guid = normalizeEvernoteGuid(n.guid);
+    if (overrides.has(guid)) {
+      return false;
+    }
+    if (vault.byEvernoteGuid.has(guid)) {
+      return false;
+    }
+    return true;
+  };
+
+  for (const [, group] of titleBuckets) {
+    const titleOnlyPending = group.filter(needsTitleOnlyResolution);
+    if (titleOnlyPending.length > 1) {
+      const head = group[0];
+      if (head === undefined) {
         continue;
       }
-      for (const n of group) {
-        const guid = normalizeEvernoteGuid(n.guid);
-        const raw = overrides.get(guid);
-        if (raw === undefined) {
-          continue;
-        }
-        const p = resolvePath(guid, raw);
-        if (p !== undefined) {
-          guidToPath.set(guid, p);
-        }
-      }
+      evernoteTitleCollisions.push({
+        normalizedTitle: normalizeTitle(head.title),
+        guids: group.map((n) => normalizeEvernoteGuid(n.guid)).sort(),
+      });
+    }
+  }
+
+  for (const n of notes) {
+    const guid = normalizeEvernoteGuid(n.guid);
+    const nt = normalizeTitle(n.title);
+
+    if (evernoteTitleCollisions.some((c) => c.guids.includes(guid))) {
       continue;
     }
 
-    const n = group[0];
-    if (n === undefined) {
-      continue;
-    }
-    const guid = normalizeEvernoteGuid(n.guid);
     const fromOverride = overrides.get(guid);
     if (fromOverride !== undefined) {
       const p = resolvePath(guid, fromOverride);
@@ -132,13 +152,42 @@ export function correlateSnapshotToGuidPaths(
       continue;
     }
 
-    const nt = normalizeTitle(n.title);
-    const path = vault.byNormalizedTitle.get(nt);
-    if (path === undefined) {
-      unmatched.push({ guid, title: n.title, normalizedTitle: nt });
-    } else {
-      guidToPath.set(guid, path);
+    const guidPath = vault.byEvernoteGuid.get(guid);
+    const titlePath = vault.byNormalizedTitle.get(nt);
+
+    if (guidPath !== undefined && titlePath !== undefined && guidPath !== titlePath) {
+      guidTitleMismatches.push({
+        guid,
+        title: n.title,
+        reason: 'paths_differ',
+        guidPath,
+        titlePath,
+      });
+      continue;
     }
+
+    if (guidPath !== undefined) {
+      guidToPath.set(guid, guidPath);
+      continue;
+    }
+
+    if (titlePath !== undefined) {
+      const vaultGuid = vault.pathToEvernoteGuid.get(titlePath);
+      if (vaultGuid !== undefined && vaultGuid !== guid) {
+        guidTitleMismatches.push({
+          guid,
+          title: n.title,
+          reason: 'vault_guid_differs',
+          titlePath,
+          vaultGuid,
+        });
+        continue;
+      }
+      guidToPath.set(guid, titlePath);
+      continue;
+    }
+
+    unmatched.push({ guid, title: n.title, normalizedTitle: nt });
   }
 
   const incompleteMapping = guidToPath.size !== notes.length;
@@ -147,27 +196,30 @@ export function correlateSnapshotToGuidPaths(
     evernoteTitleCollisions.length > 0 ||
     unmatched.length > 0 ||
     invalidOverrides.length > 0 ||
+    guidTitleMismatches.length > 0 ||
     incompleteMapping
   ) {
     evernoteTitleCollisions.sort((a, b) => a.normalizedTitle.localeCompare(b.normalizedTitle));
     unmatched.sort((a, b) => a.guid.localeCompare(b.guid));
     invalidOverrides.sort((a, b) => a.guid.localeCompare(b.guid));
+    guidTitleMismatches.sort((a, b) => a.guid.localeCompare(b.guid));
     return {
       ok: false,
       evernoteTitleCollisions,
       unmatched,
       invalidOverrides,
       duplicateTargetPaths: [],
+      guidTitleMismatches,
     };
   }
 
   const byPath = new Map<string, string[]>();
-  for (const [guid, p] of guidToPath) {
+  for (const [g, p] of guidToPath) {
     const list = byPath.get(p);
     if (list) {
-      list.push(guid);
+      list.push(g);
     } else {
-      byPath.set(p, [guid]);
+      byPath.set(p, [g]);
     }
   }
   const duplicateTargetPaths: DuplicateTargetPath[] = [];
@@ -184,6 +236,7 @@ export function correlateSnapshotToGuidPaths(
       unmatched: [],
       invalidOverrides: [],
       duplicateTargetPaths,
+      guidTitleMismatches: [],
     };
   }
 

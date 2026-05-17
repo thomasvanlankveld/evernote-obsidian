@@ -61,7 +61,7 @@ Optional: **`index`** (preflight title uniqueness), **`links`** (report remainin
 - **`evernote-obsidian index [--vault-dir <path>]`** — Walk **`--vault-dir`** (default `./data`) and report whether normalized titles are unique enough for correlation.
 - **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).
 
-- **`evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>] [--map-out <path>]`** — Join snapshot rows to Markdown under **`--vault-dir`** using the same **normalized title** rules as `index`, and write **`./out/link-map.json`** by default (GUID → path relative to **`--vault-dir`**). **`--map-out`** is an alias for **`--out`**. Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping.
+- **`evernote-obsidian correlate --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--out <path>] [--map-out <path>]`** — Join snapshot rows to Markdown under **`--vault-dir`**: match by frontmatter **`evernote-guid:`** when present (line-based YAML subset, same style as `title:`), else **normalized title** (same rules as `index`). Writes **`./out/link-map.json`** by default (GUID → path relative to **`--vault-dir`**). **`--map-out`** is an alias for **`--out`**. Optional **`--overrides`** points at JSON `{ "version": 1, "byGuid": { "<guid>": "<path.md>" } }` for Evernote title collisions or intentional remapping.
 
 - **`evernote-obsidian links [--vault-dir <path>] [--out <path>] [--skip-other-evernote-hosts]`** — Scan Markdown under **`--vault-dir`** for **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` links for reporting). Default is JSON on stdout; **`--out`** writes a report file.
 
@@ -73,9 +73,9 @@ Create the database with upstream’s **`evernote-backup init-db`** / **`sync`**
 
 ## Known limitations
 
-- **Title-only correlation (v1):** `correlate` matches Evernote snapshot rows to vault files by **normalized title** (filename or frontmatter `title:`). If the [Importer](https://github.com/obsidianmd/obsidian-importer) changed a title, you renamed files, or two notes collide after normalization, correlation fails or needs manual **`byGuid` overrides**. Future: GUID in frontmatter ([#29](https://github.com/thomasvanlankveld/evernote-obsidian/issues/29)).
+- **Correlation keys:** `correlate` prefers vault frontmatter **`evernote-guid:`** (lowercase UUID scalar) when present, then falls back to **normalized title** (filename or frontmatter `title:`). Ambiguous duplicate GUIDs in the vault, GUID/title disagreements, or duplicate Evernote titles without resolvable GUIDs fail with a JSON report (no silent wrong links). Use **`byGuid` overrides** for intentional remapping.
 - **Link hosts:** `links` / `rewrite` target **`evernote://…`** and **`https://www.evernote.com/shard/…`** note URLs (plus other `*.evernote.com` for reporting). **Regional products** (e.g. Yinxiang / 印象笔记 on non-`evernote.com` domains) are **out of scope** unless URLs in your Markdown use the shapes above. evernote-backup can still sync Yinxiang metadata into the SQLite DB for `snapshot`.
-- **Not a full YAML parser:** Frontmatter support is a line-based subset (`title:` only today). See the EDD for details.
+- **Not a full YAML parser:** Frontmatter support is a line-based subset (`title:` and `evernote-guid:` scalars only). See the EDD for details.
 
 ## Evernote snapshot: limits
 

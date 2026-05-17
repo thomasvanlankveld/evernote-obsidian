@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-17 (vault walk: skip `.obsidian` and `.trash`; Phase 5: lowercase GUID map keys documented)
+**Last updated:** 2026-05-17 (vault `evernote-guid:` frontmatter; correlate GUID-first matching)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -47,12 +47,13 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 - [x] Walk configurable vault root; **CLI default** is **`./data`** (cwd-relative), overridable with **`--vault`** (`evernote-obsidian index`).
 - [x] Index Markdown files: path, **normalized title** from filename and optional YAML frontmatter (`title:`).
-- [x] **Correlation key (v1):** normalized **title** only; optional later: frontmatter such as `evernote-guid:` if a preprocessor adds it.
-- [x] **Duplicate titles:** **fail** with a report listing collisions — **no** silent first-wins (overrides land in a later phase).
+- [x] **Correlation key (v1):** normalized **title**; **v1.1:** optional frontmatter **`evernote-guid:`** (line-based scalar, lowercase in index).
+- [x] **Duplicate titles:** **fail** with a report listing collisions — **no** silent first-wins.
+- [x] **Duplicate `evernote-guid:` values** in the vault: **fail** with `guidCollisions` (same no-silent-wins rule).
 
 **Phase 2 implementation notes**
 
-- **Frontmatter `title:` (v1):** line-based subset only (first `title:` scalar line, optional simple quotes), not full YAML — no block scalars, aliases, or other keys.
+- **Frontmatter `title:` / `evernote-guid:` (v1):** line-based subset only (first scalar line per key, optional simple quotes), not full YAML — no block scalars, aliases, or other keys. GUIDs are normalized to lowercase in the index.
 - **Empty normalized title** (e.g. filename stem trims to nothing): **invalid**; index fails with the same collision-shaped report shape (`normalizedTitle: ""`).
 - **Symlinks:** **symlinked directories are not recursed** (avoids cycles); a regular file that is a symlink is still indexed. Layouts that rely on symlinked folders for notes are unsupported in v1.
 - **CLI:** `--vault` requires a path when the flag is present; other I/O errors surface as **exit 2** and a short message (not only missing root).
@@ -87,7 +88,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 
 ### Phase 5 — Correlation
 
-- [x] Join Evernote records to vault index by **normalized title**, plus **user override file** for collisions and renames.
+- [x] Join Evernote records to vault index by **`evernote-guid:` frontmatter when present**, else **normalized title**, plus **user override file** for collisions and renames.
 - [x] Emit **link map**: **GUID → vault-relative path** to the target note file (all extracted note URLs normalize to a GUID). Rewrites combine this path with the **alias** from extraction into **`[[path|alias]]`**.
 
 **Deliverable:** `link-map.json` (default gitignored unless sanitized). ✅
@@ -97,7 +98,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 - **CLI:** `evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]` — default **`./out/link-map.json`**, vault default **`./data`**.
 - **GUID map keys:** Evernote note GUIDs in snapshots, `guidToPath` / `link-map.json`, and override `byGuid` keys are always stored **lowercase** (normalized at ingestion). Link extraction lowercases GUIDs parsed from URLs before lookup; this keeps in-memory and on-disk maps aligned.
 - **Overrides JSON:** `{ "version": 1, "byGuid": { "<guid>": "<vault-relative-path>" } }` — paths must match an indexed `.md` path (POSIX separators). **Evernote duplicate titles** (multiple GUIDs sharing the same normalized title) require **`byGuid` for every GUID** in that group.
-- **Failure cases (exit 1, JSON on stderr):** vault index collisions (same as `index`); **unmatched** snapshot titles; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without full overrides.
+- **Failure cases (exit 1, JSON on stderr):** vault index title/`evernote-guid` collisions (same as `index`); **unmatched** snapshot rows; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without resolvable GUIDs/overrides; **`guidTitleMismatches`** when frontmatter GUID and title-based resolution disagree.
 
 ### Phase 6 — Rewrite
 
