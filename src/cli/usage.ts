@@ -18,7 +18,7 @@ export function usage(): string {
     '  evernote-obsidian fix-resources [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '',
     'Commands:',
-    '  run        Chain snapshot → correlate → unescape-links → rewrite → fix-resources (typical one-shot fix; --db unless --snapshot/--map reuse intermediates).',
+    '  run        Chain snapshot → correlate → unescape-links → rewrite → fix-resources; prints Evernote vs vault preflight on stderr first when --db or --snapshot is available.',
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  check      Compare Evernote snapshot/DB note count to vault markdown count (preflight hints; no link map).',
     '  snapshot   Export Evernote note metadata from an evernote-backup SQLite DB to JSON (not a vault snapshot).',

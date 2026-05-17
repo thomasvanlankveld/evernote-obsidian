@@ -39,9 +39,21 @@ export interface PreflightHumanFormatInput {
   warnings: readonly PreflightWarning[];
 }
 
-export function formatPreflightHuman(input: PreflightHumanFormatInput): string {
+export type PreflightFormatContext = 'check' | 'run';
+
+function preflightHeader(context: PreflightFormatContext): string {
+  if (context === 'run') {
+    return 'Preflight: Evernote vs vault counts (hints only; continuing run…)';
+  }
+  return 'Preflight: Evernote vs vault counts (hints only; run correlate for GUID ↔ path mapping)';
+}
+
+export function formatPreflightHuman(
+  input: PreflightHumanFormatInput,
+  context: PreflightFormatContext = 'check',
+): string {
   const lines = [
-    'Preflight: Evernote vs vault counts (hints only; run correlate for GUID ↔ path mapping)',
+    preflightHeader(context),
     '',
     `Vault:     ${input.vaultMarkdown} markdown file${input.vaultMarkdown === 1 ? '' : 's'} under ${input.vaultRoot}`,
     `Evernote:  ${input.evernoteNotes} note${input.evernoteNotes === 1 ? '' : 's'} in ${input.evernoteLabel}`,

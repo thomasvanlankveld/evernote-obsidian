@@ -217,9 +217,11 @@ export async function runCorrelate(
     }
 
     const snapshot = await readSnapshotFile(parsed.snapshotPath);
-    streams.stderr.write(
-      formatVaultCorrelateContext(vaultDisplay, vaultCtx, snapshot.notes.length),
-    );
+    if (invoke?.skipVaultCorrelateContext !== true) {
+      streams.stderr.write(
+        formatVaultCorrelateContext(vaultDisplay, vaultCtx, snapshot.notes.length),
+      );
+    }
     let overrides = new Map<string, string>();
     if (parsed.overridesPath !== undefined) {
       const raw = await readFile(parsed.overridesPath, 'utf8');

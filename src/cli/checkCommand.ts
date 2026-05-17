@@ -99,24 +99,30 @@ export interface CheckEvernoteSource {
   truncated?: boolean | undefined;
 }
 
-async function readEvernoteCount(parsed: CheckCliOk): Promise<CheckEvernoteSource> {
-  if (parsed.dbPath !== undefined) {
+export interface EvernoteCountSource {
+  snapshotPath?: string | undefined;
+  dbPath?: string | undefined;
+  maxRecords?: number | undefined;
+}
+
+export async function readEvernoteCount(source: EvernoteCountSource): Promise<CheckEvernoteSource> {
+  if (source.dbPath !== undefined) {
     const readOpts =
-      parsed.maxRecords !== undefined ? { maxRecords: parsed.maxRecords } : undefined;
+      source.maxRecords !== undefined ? { maxRecords: source.maxRecords } : undefined;
     const { records, sourceRowCount } = readNoteRecordsFromEvernoteBackupDb(
-      parsed.dbPath,
+      source.dbPath,
       readOpts,
     );
     return {
       count: records.length,
       source: 'db',
-      path: parsed.dbPath,
+      path: source.dbPath,
       sourceRowCount,
       truncated:
-        parsed.maxRecords !== undefined && records.length < sourceRowCount ? true : undefined,
+        source.maxRecords !== undefined && records.length < sourceRowCount ? true : undefined,
     };
   }
-  const snapshotPath = parsed.snapshotPath;
+  const snapshotPath = source.snapshotPath;
   if (snapshotPath === undefined) {
     throw new Error('check: internal error: missing Evernote source');
   }
@@ -191,7 +197,11 @@ export async function runCheck(
   const human = !parsed.json && isStdoutTty(streams);
 
   try {
-    const evernote = await readEvernoteCount(parsed);
+    const evernote = await readEvernoteCount({
+      snapshotPath: parsed.snapshotPath,
+      dbPath: parsed.dbPath,
+      maxRecords: parsed.maxRecords,
+    });
     const indexResult = await buildVaultIndex(parsed.vaultRoot);
     const vaultMarkdown = indexResult.ok ? indexResult.entries.length : 0;
     const payload = buildCheckResultPayload(

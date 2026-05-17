@@ -696,8 +696,10 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 0);
-      assert.match(err(), /Vault: 3 markdown files/);
-      assert.match(err(), /Evernote: 3 notes in snapshot/);
+      assert.match(err(), /Preflight:/);
+      assert.match(err(), /Vault:\s+3 markdown/);
+      assert.match(err(), /Evernote:\s+3 notes in Evernote DB/);
+      assert.doesNotMatch(err(), /have evernote-guid frontmatter/);
 
       const report = JSON.parse(out()) as {
         ok: boolean;
@@ -753,8 +755,9 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 0);
-      assert.match(err(), /Vault: 3 markdown files/);
-      assert.match(err(), /Evernote: 1 note in snapshot/);
+      assert.match(err(), /Preflight:/);
+      assert.match(err(), /Vault:\s+3 markdown/);
+      assert.match(err(), /Evernote:\s+1 note in snapshot/);
       const report = JSON.parse(out()) as {
         ok: boolean;
         steps: { id: string; status: string; summary?: { ok?: boolean } }[];
@@ -866,7 +869,7 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 0);
-      assert.equal(err(), '');
+      assert.match(err(), /Preflight:/);
       const report = JSON.parse(out()) as {
         ok: boolean;
         steps: { id: string; status: string; summary?: { mode?: string } }[];
@@ -879,7 +882,7 @@ describe('cli main', () => {
     }
   });
 
-  it('run exits 2 when snapshot step fails (missing db file)', async () => {
+  it('run exits 2 when preflight cannot read --db', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-bad-db-'));
     try {
       const { streams, out, err } = makeStreams();
@@ -889,10 +892,8 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 2);
-      const report = JSON.parse(out()) as { ok: boolean; failedStep?: string };
-      assert.equal(report.ok, false);
-      assert.equal(report.failedStep, 'snapshot');
-      assert.match(err(), /^snapshot:/);
+      assert.equal(out(), '');
+      assert.match(err(), /run: preflight:/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -983,10 +984,9 @@ describe('cli main', () => {
     }
   });
 
-  it('run exits 1 when vault has title collisions (correlate step)', async () => {
+  it('run exits 1 when vault has title collisions (preflight)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-collision-'));
     const dbPath = join(dir, 'en.db');
-    const reportPath = join(dir, 'out', 'correlate-report.json');
     const db = new DatabaseSync(dbPath);
     db.exec(`
       CREATE TABLE notes(
@@ -1007,22 +1007,53 @@ describe('cli main', () => {
         { cwd: dir },
       );
       assert.equal(code, 1);
-      const report = JSON.parse(out()) as {
-        ok: boolean;
-        failedStep?: string;
-        steps: { id: string; summary?: { reason?: string } }[];
-      };
-      assert.equal(report.ok, false);
-      assert.equal(report.failedStep, 'correlate');
-      const correlateStep = report.steps.find((s) => s.id === 'correlate');
-      assert.equal(correlateStep?.summary?.reason, 'vault_index_collisions');
-      assert.match(err(), /Run failed at correlate/);
-      const correlateReportFile = JSON.parse(await readFile(reportPath, 'utf8')) as {
-        reason: string;
-        collisions: unknown[];
-      };
-      assert.equal(correlateReportFile.reason, 'vault_index_collisions');
-      assert.equal(correlateReportFile.collisions.length, 1);
+      assert.equal(out(), '');
+      assert.match(err(), /Preflight:/);
+      assert.match(err(), /vault index collision/);
+      assert.doesNotMatch(err(), /Run failed at/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run continues after count-mismatch preflight hint', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-preflight-hint-'));
+    const vaultDir = join(dir, 'vault');
+    await mkdir(vaultDir);
+    for (let i = 0; i < 12; i++) {
+      await writeFile(join(vaultDir, `note-${i}.md`), `---\ntitle: Note ${i}\n---\n`);
+    }
+    const snapPath = join(dir, 'evernote-notes.json');
+    const mapPath = join(dir, 'link-map.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [
+        { guid: 'g1', title: 'First', updated: '1970-01-01T00:00:00.000Z' },
+        { guid: 'g2', title: 'Second', updated: '1970-01-01T00:00:00.000Z' },
+      ],
+    };
+    const map = {
+      version: 1,
+      writtenAt: 't',
+      vaultRoot: vaultDir,
+      snapshotPath: snapPath,
+      guidToPath: { g1: 'note-0.md', g2: 'note-1.md' },
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    await writeFile(mapPath, JSON.stringify(map), 'utf8');
+    try {
+      const { streams, out, err } = makeStreams();
+      const code = await main(
+        ['run', '--vault-dir', vaultDir, '--snapshot', snapPath, '--map', mapPath],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 0);
+      assert.match(err(), /Vault has more markdown files than Evernote/);
+      const report = JSON.parse(out()) as { ok: boolean };
+      assert.equal(report.ok, true);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

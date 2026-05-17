@@ -20,6 +20,8 @@ export interface StepInvokeContext {
   /** Emit progress lines to stderr when set. */
   progress?: boolean | undefined;
   onProgress?: ((line: string) => void) | undefined;
+  /** Omit vault/Evernote count lines in correlate (run already printed preflight). */
+  skipVaultCorrelateContext?: boolean | undefined;
 }
 
 export interface StepInvokeResult {

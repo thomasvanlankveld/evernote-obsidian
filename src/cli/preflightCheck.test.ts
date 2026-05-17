@@ -36,4 +36,18 @@ describe('preflightCheck', () => {
     assert.match(text, /Evernote:\s+2 note/);
     assert.match(text, /hints only/);
   });
+
+  it('formats run preflight header when context is run', () => {
+    const text = formatPreflightHuman(
+      {
+        vaultRoot: './data',
+        vaultMarkdown: 1,
+        evernoteNotes: 1,
+        evernoteLabel: 'snapshot (./out/evernote-notes.json)',
+        warnings: [],
+      },
+      'run',
+    );
+    assert.match(text, /continuing run/);
+  });
 });
