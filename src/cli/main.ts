@@ -8,8 +8,10 @@ import {
   vaultIndexResultToCorrelationInput,
 } from '../correlation/correlate.ts';
 import {
+  assertLinkMapVaultRootMatches,
   buildLinkMapFile,
   LinkMapParseError,
+  LinkMapVaultRootMismatchError,
   parseLinkMapJson,
 } from '../correlation/linkMapFile.ts';
 import { parseCorrelationOverridesJson } from '../correlation/overridesFile.ts';
@@ -698,6 +700,7 @@ async function runRewrite(parsed: RewriteCliOk, streams: MainStreams): Promise<n
   try {
     const rawMap = await readFile(parsed.mapPath, 'utf8');
     const linkMap = parseLinkMapJson(rawMap);
+    assertLinkMapVaultRootMatches(linkMap, parsed.vaultRoot);
     const guidToPath = new Map<string, string>(Object.entries(linkMap.guidToPath));
 
     const files = await walkVaultMarkdownFiles(parsed.vaultRoot);
@@ -769,6 +772,10 @@ async function runRewrite(parsed: RewriteCliOk, streams: MainStreams): Promise<n
       return 2;
     }
     if (e instanceof LinkMapParseError) {
+      streams.stderr.write(`rewrite: ${e.message}\n`);
+      return 2;
+    }
+    if (e instanceof LinkMapVaultRootMismatchError) {
       streams.stderr.write(`rewrite: ${e.message}\n`);
       return 2;
     }

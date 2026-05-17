@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildLinkMapFile, LinkMapParseError, parseLinkMapJson } from './linkMapFile.ts';
+import {
+  assertLinkMapVaultRootMatches,
+  buildLinkMapFile,
+  LinkMapParseError,
+  LinkMapVaultRootMismatchError,
+  parseLinkMapJson,
+} from './linkMapFile.ts';
 
 describe('buildLinkMapFile', () => {
   it('lowercases guidToPath keys', () => {
@@ -41,6 +47,26 @@ describe('parseLinkMapJson', () => {
   it('throws when guidToPath value is not a string', () => {
     assert.throws(
       () => parseLinkMapJson(JSON.stringify({ version: 1, guidToPath: { a: 1 } })),
+      LinkMapParseError,
+    );
+  });
+});
+
+describe('assertLinkMapVaultRootMatches', () => {
+  it('accepts matching resolved vault roots', () => {
+    assert.doesNotThrow(() => assertLinkMapVaultRootMatches({ vaultRoot: '/vault/a' }, '/vault/a'));
+  });
+
+  it('throws when vault roots differ', () => {
+    assert.throws(
+      () => assertLinkMapVaultRootMatches({ vaultRoot: '/vault/a' }, '/vault/b'),
+      LinkMapVaultRootMismatchError,
+    );
+  });
+
+  it('throws when link map vaultRoot is empty', () => {
+    assert.throws(
+      () => assertLinkMapVaultRootMatches({ vaultRoot: '' }, '/vault'),
       LinkMapParseError,
     );
   });
