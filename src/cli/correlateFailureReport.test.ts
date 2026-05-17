@@ -20,6 +20,7 @@ describe('correlateFailureReport', () => {
       invalidOverrides: [],
       duplicateTargetPaths: [],
       guidTitleMismatches: [],
+      truncatedPrefixCollisions: [],
     });
     const counts = correlationFailureCounts(report);
     assert.equal(counts.unmatched, 2);

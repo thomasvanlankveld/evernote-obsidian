@@ -17,6 +17,20 @@ describe('buildLinkMapFile', () => {
     );
     assert.equal(file.guidToPath['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'], 'n.md');
   });
+
+  it('includes truncatedTitleMatches when provided', () => {
+    const file = buildLinkMapFile('/vault', '/snap', new Map([['g1', 'n.md']]), undefined, [
+      {
+        guid: 'g1',
+        title: 'Full Title',
+        normalizedTitle: 'full title extended',
+        vaultNormalizedStem: 'full title',
+        path: 'n.md',
+      },
+    ]);
+    assert.equal(file.truncatedTitleMatches?.length, 1);
+    assert.equal(file.truncatedTitleMatches?.[0]?.guid, 'g1');
+  });
 });
 
 describe('parseLinkMapJson', () => {

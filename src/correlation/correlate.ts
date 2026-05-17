@@ -32,8 +32,32 @@ export interface GuidTitleMismatch {
   vaultGuid?: string | undefined;
 }
 
+/** Snapshot row matched via Importer-truncated vault filename stem (prefix of normalized title). */
+export interface TruncatedTitleMatch {
+  guid: string;
+  title: string;
+  normalizedTitle: string;
+  vaultNormalizedStem: string;
+  path: string;
+}
+
+/** Two or more vault stems qualify as a prefix of the same snapshot normalized title. */
+export interface TruncatedPrefixCollision {
+  guid: string;
+  title: string;
+  normalizedTitle: string;
+  candidateStems: string[];
+  candidatePaths: string[];
+}
+
+/**
+ * Minimum normalized stem length for truncated-prefix correlate.
+ * Avoids spurious matches on very short shared prefixes when the vault file is missing.
+ */
+export const MIN_TRUNCATED_PREFIX_STEM_LENGTH = 12;
+
 export type CorrelateResult =
-  | { ok: true; guidToPath: ReadonlyMap<string, string> }
+  | { ok: true; guidToPath: ReadonlyMap<string, string>; truncatedMatches: TruncatedTitleMatch[] }
   | {
       ok: false;
       evernoteTitleCollisions: EvernoteTitleCollision[];
@@ -41,6 +65,7 @@ export type CorrelateResult =
       invalidOverrides: InvalidOverride[];
       duplicateTargetPaths: DuplicateTargetPath[];
       guidTitleMismatches: GuidTitleMismatch[];
+      truncatedPrefixCollisions: TruncatedPrefixCollision[];
     };
 
 export interface VaultIndexForCorrelation {
@@ -65,6 +90,60 @@ export function vaultIndexResultToCorrelationInput(
   };
 }
 
+export type TruncatedPrefixLookup =
+  | { kind: 'none' }
+  | { kind: 'unique'; stem: string; path: string }
+  | { kind: 'ambiguous'; stems: string[]; paths: string[] };
+
+/**
+ * Find a unique vault file whose normalized stem is a strict prefix of `snapshotNormTitle`
+ * (Importer/OS filename truncation). Fails closed when zero or multiple candidates qualify.
+ */
+export function findTruncatedPrefixMatch(
+  snapshotNormTitle: string,
+  byNormalizedTitle: ReadonlyMap<string, string>,
+  minStemLength: number = MIN_TRUNCATED_PREFIX_STEM_LENGTH,
+): TruncatedPrefixLookup {
+  if (snapshotNormTitle.length === 0) {
+    return { kind: 'none' };
+  }
+
+  let unique: { stem: string; path: string } | undefined;
+  const ambiguousStems: string[] = [];
+  const ambiguousPaths: string[] = [];
+
+  for (const [stem, path] of byNormalizedTitle) {
+    if (stem.length < minStemLength || stem.length >= snapshotNormTitle.length) {
+      continue;
+    }
+    if (!snapshotNormTitle.startsWith(stem)) {
+      continue;
+    }
+    if (unique === undefined && ambiguousStems.length === 0) {
+      unique = { stem, path };
+      continue;
+    }
+    if (unique !== undefined) {
+      ambiguousStems.push(unique.stem, stem);
+      ambiguousPaths.push(unique.path, path);
+      unique = undefined;
+      continue;
+    }
+    ambiguousStems.push(stem);
+    ambiguousPaths.push(path);
+  }
+
+  if (ambiguousStems.length > 0) {
+    const stems = [...new Set(ambiguousStems)].sort();
+    const paths = [...new Set(ambiguousPaths)].sort();
+    return { kind: 'ambiguous', stems, paths };
+  }
+  if (unique !== undefined) {
+    return { kind: 'unique', stem: unique.stem, path: unique.path };
+  }
+  return { kind: 'none' };
+}
+
 /**
  * Join Evernote snapshot rows to vault paths: **GUID from vault frontmatter** when present,
  * else {@link normalizeTitle} (Importer-aware) on note titles, with optional per-GUID overrides.
@@ -83,6 +162,8 @@ export function correlateSnapshotToGuidPaths(
   const unmatched: UnmatchedNote[] = [];
   const invalidOverrides: InvalidOverride[] = [];
   const guidTitleMismatches: GuidTitleMismatch[] = [];
+  const truncatedPrefixCollisions: TruncatedPrefixCollision[] = [];
+  const truncatedMatches: TruncatedTitleMatch[] = [];
   const guidToPath = new Map<string, string>();
 
   const resolvePath = (guid: string, rel: string): string | undefined => {
@@ -189,6 +270,40 @@ export function correlateSnapshotToGuidPaths(
       continue;
     }
 
+    const prefixLookup = findTruncatedPrefixMatch(nt, vault.byNormalizedTitle);
+    if (prefixLookup.kind === 'ambiguous') {
+      truncatedPrefixCollisions.push({
+        guid,
+        title: n.title,
+        normalizedTitle: nt,
+        candidateStems: prefixLookup.stems,
+        candidatePaths: prefixLookup.paths,
+      });
+      continue;
+    }
+    if (prefixLookup.kind === 'unique') {
+      const vaultGuid = vault.pathToEvernoteGuid.get(prefixLookup.path);
+      if (vaultGuid !== undefined && vaultGuid !== guid) {
+        guidTitleMismatches.push({
+          guid,
+          title: n.title,
+          reason: 'vault_guid_differs',
+          titlePath: prefixLookup.path,
+          vaultGuid,
+        });
+        continue;
+      }
+      truncatedMatches.push({
+        guid,
+        title: n.title,
+        normalizedTitle: nt,
+        vaultNormalizedStem: prefixLookup.stem,
+        path: prefixLookup.path,
+      });
+      guidToPath.set(guid, prefixLookup.path);
+      continue;
+    }
+
     unmatched.push({ guid, title: n.title, normalizedTitle: nt });
   }
 
@@ -199,12 +314,14 @@ export function correlateSnapshotToGuidPaths(
     unmatched.length > 0 ||
     invalidOverrides.length > 0 ||
     guidTitleMismatches.length > 0 ||
+    truncatedPrefixCollisions.length > 0 ||
     incompleteMapping
   ) {
     evernoteTitleCollisions.sort((a, b) => a.normalizedTitle.localeCompare(b.normalizedTitle));
     unmatched.sort((a, b) => a.guid.localeCompare(b.guid));
     invalidOverrides.sort((a, b) => a.guid.localeCompare(b.guid));
     guidTitleMismatches.sort((a, b) => a.guid.localeCompare(b.guid));
+    truncatedPrefixCollisions.sort((a, b) => a.guid.localeCompare(b.guid));
     return {
       ok: false,
       evernoteTitleCollisions,
@@ -212,6 +329,7 @@ export function correlateSnapshotToGuidPaths(
       invalidOverrides,
       duplicateTargetPaths: [],
       guidTitleMismatches,
+      truncatedPrefixCollisions,
     };
   }
 
@@ -239,8 +357,10 @@ export function correlateSnapshotToGuidPaths(
       invalidOverrides: [],
       duplicateTargetPaths,
       guidTitleMismatches: [],
+      truncatedPrefixCollisions: [],
     };
   }
 
-  return { ok: true, guidToPath };
+  truncatedMatches.sort((a, b) => a.guid.localeCompare(b.guid));
+  return { ok: true, guidToPath, truncatedMatches };
 }

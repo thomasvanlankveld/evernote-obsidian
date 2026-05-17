@@ -6,6 +6,8 @@ import type {
   EvernoteTitleCollision,
   GuidTitleMismatch,
   InvalidOverride,
+  TruncatedPrefixCollision,
+  TruncatedTitleMatch,
   UnmatchedNote,
 } from '../correlation/correlate.ts';
 import type { VaultIndexCollision, VaultIndexGuidCollision } from '../vault/vaultIndex.ts';
@@ -18,8 +20,14 @@ export interface CorrelationFailureCounts {
   invalidOverrides: number;
   duplicateTargetPaths: number;
   guidTitleMismatches: number;
+  truncatedPrefixCollisions: number;
   vaultTitleCollisions: number;
   vaultGuidCollisions: number;
+}
+
+export interface CorrelationSuccessReport {
+  ok: true;
+  truncatedTitleMatches: TruncatedTitleMatch[];
 }
 
 export interface CorrelationFailureReport {
@@ -30,6 +38,7 @@ export interface CorrelationFailureReport {
   invalidOverrides?: InvalidOverride[] | undefined;
   duplicateTargetPaths?: DuplicateTargetPath[] | undefined;
   guidTitleMismatches?: GuidTitleMismatch[] | undefined;
+  truncatedPrefixCollisions?: TruncatedPrefixCollision[] | undefined;
   collisions?: VaultIndexCollision[] | undefined;
   guidCollisions?: VaultIndexGuidCollision[] | undefined;
 }
@@ -53,6 +62,7 @@ export function correlationFailureFromCorrelateResult(
     invalidOverrides: result.invalidOverrides,
     duplicateTargetPaths: result.duplicateTargetPaths,
     guidTitleMismatches: result.guidTitleMismatches,
+    truncatedPrefixCollisions: result.truncatedPrefixCollisions,
   };
 }
 
@@ -77,6 +87,7 @@ export function correlationFailureCounts(
     invalidOverrides: report.invalidOverrides?.length ?? 0,
     duplicateTargetPaths: report.duplicateTargetPaths?.length ?? 0,
     guidTitleMismatches: report.guidTitleMismatches?.length ?? 0,
+    truncatedPrefixCollisions: report.truncatedPrefixCollisions?.length ?? 0,
     vaultTitleCollisions: report.collisions?.length ?? 0,
     vaultGuidCollisions: report.guidCollisions?.length ?? 0,
   };
@@ -129,6 +140,9 @@ export function formatCorrelationFailureHint(summary: CorrelationFailureSummary)
   if (counts.invalidOverrides > 0) {
     parts.push(`${counts.invalidOverrides} invalid override(s)`);
   }
+  if (counts.truncatedPrefixCollisions > 0) {
+    parts.push(`${counts.truncatedPrefixCollisions} truncated-prefix collision(s)`);
+  }
   const detail = parts.length > 0 ? parts.join(', ') : 'correlation failed';
   return `correlate: ${detail} — see ${reportPath}\n`;
 }
@@ -146,6 +160,14 @@ export function correlationHintForRun(hintLine: string): string {
 export async function writeCorrelationFailureReport(
   reportPath: string,
   report: CorrelationFailureReport,
+): Promise<void> {
+  await mkdir(dirname(reportPath), { recursive: true });
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+}
+
+export async function writeCorrelationTruncationReport(
+  reportPath: string,
+  report: CorrelationSuccessReport,
 ): Promise<void> {
   await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');

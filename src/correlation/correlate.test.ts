@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { NoteRecord } from '../evernote/noteRecord.ts';
 import { rewriteMarkdownWithGuidMap } from '../vault/rewriteEvernoteLinks.ts';
-import { correlateSnapshotToGuidPaths, vaultIndexResultToCorrelationInput } from './correlate.ts';
+import { normalizeTitle } from '../vault/vaultIndex.ts';
+import {
+  correlateSnapshotToGuidPaths,
+  findTruncatedPrefixMatch,
+  vaultIndexResultToCorrelationInput,
+} from './correlate.ts';
 
 const vaultPaths = ['first.md', 'sub/second note.md', 'third.md'] as const;
 
@@ -365,5 +370,92 @@ describe('correlateSnapshotToGuidPaths', () => {
     if (r.ok) {
       assert.equal(r.guidToPath.get('g1'), 'third.md');
     }
+  });
+
+  it('matches Importer-truncated vault stems as a unique prefix of the snapshot title', () => {
+    const snapshotTitle = 'Very Long Podcast Episode Name About Something Important @ 53:59';
+    const truncatedStem = 'Very Long Podcast Episode Name About Something Important @ 53';
+    const vaultPath = `${truncatedStem}.md`;
+    const vault = vaultIndexResultToCorrelationInput(
+      new Map([[normalizeTitle(truncatedStem), vaultPath]]),
+      [vaultPath],
+    );
+    const notes: NoteRecord[] = [
+      { guid: 'g-pod', title: snapshotTitle, updated: '1970-01-01T00:00:00.000Z' },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.guidToPath.get('g-pod'), vaultPath);
+      assert.equal(r.truncatedMatches.length, 1);
+      assert.equal(r.truncatedMatches[0]?.guid, 'g-pod');
+      assert.equal(r.truncatedMatches[0]?.path, vaultPath);
+      assert.equal(r.truncatedMatches[0]?.vaultNormalizedStem, normalizeTitle(truncatedStem));
+    }
+  });
+
+  it('matches long article titles when the vault stem keeps only the leading segments', () => {
+    const snapshotTitle =
+      'Deep Dive | Part One | Part Two | Part Three | Extra Context That Was Dropped';
+    const truncatedStem = 'Deep Dive Part One Part Two Part Three';
+    const vaultPath = 'clips/Deep Dive Part One Part Two Part Three.md';
+    const vault = vaultIndexResultToCorrelationInput(
+      new Map([[normalizeTitle(truncatedStem), vaultPath]]),
+      [vaultPath],
+    );
+    const notes: NoteRecord[] = [
+      { guid: 'g-clip', title: snapshotTitle, updated: '1970-01-01T00:00:00.000Z' },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.guidToPath.get('g-clip'), vaultPath);
+      assert.equal(r.truncatedMatches.length, 1);
+    }
+  });
+
+  it('reports truncated-prefix collision when two vault stems qualify', () => {
+    const snapshotTitle = 'The Quick Brown Fox Jumps Over The Lazy Dog Extended Edition';
+    const vault = vaultIndexResultToCorrelationInput(
+      new Map([
+        [normalizeTitle('The Quick Brown Fox'), 'a.md'],
+        [normalizeTitle('The Quick Brown'), 'b.md'],
+      ]),
+      ['a.md', 'b.md'],
+    );
+    const notes: NoteRecord[] = [
+      { guid: 'g-amb', title: snapshotTitle, updated: '1970-01-01T00:00:00.000Z' },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.truncatedPrefixCollisions.length, 1);
+      assert.equal(r.truncatedPrefixCollisions[0]?.guid, 'g-amb');
+      assert.equal(r.unmatched.length, 0);
+    }
+  });
+
+  it('leaves genuinely missing imports unmatched (no prefix shortcut)', () => {
+    const notes: NoteRecord[] = [
+      {
+        guid: 'g-miss',
+        title: 'Short Personal Note Title',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, makeVault());
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.unmatched.length, 1);
+      assert.equal(r.truncatedPrefixCollisions.length, 0);
+    }
+  });
+});
+
+describe('findTruncatedPrefixMatch', () => {
+  it('returns none when the stem is not shorter than the snapshot title', () => {
+    const title = normalizeTitle('Exact Match Title Here');
+    const lookup = findTruncatedPrefixMatch(title, new Map([[title, 'same.md']]));
+    assert.equal(lookup.kind, 'none');
   });
 });

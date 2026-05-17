@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { normalizeEvernoteGuid } from '../evernote/noteRecord.ts';
+import type { TruncatedTitleMatch } from './correlate.ts';
 
 /**
  * On-disk link map: Evernote note GUID → vault-relative Markdown path (Phase 5 output).
@@ -16,6 +17,8 @@ export interface LinkMapFile {
   overridesPath?: string | undefined;
   /** Evernote note GUID → path relative to vault root (POSIX separators). */
   guidToPath: Record<string, string>;
+  /** Title-only matches via Importer/OS-truncated filename stems; omitted when none. */
+  truncatedTitleMatches?: TruncatedTitleMatch[] | undefined;
 }
 
 export class LinkMapParseError extends Error {
@@ -94,7 +97,41 @@ export function parseLinkMapJson(text: string): LinkMapFile {
     snapshotPath: typeof o.snapshotPath === 'string' ? o.snapshotPath : '',
     overridesPath: typeof o.overridesPath === 'string' ? o.overridesPath : undefined,
     guidToPath: norm,
+    truncatedTitleMatches: parseTruncatedTitleMatches(o.truncatedTitleMatches),
   };
+}
+
+function parseTruncatedTitleMatches(raw: unknown): TruncatedTitleMatch[] | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(raw)) {
+    throw new LinkMapParseError('truncatedTitleMatches must be an array when present');
+  }
+  const out: TruncatedTitleMatch[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      throw new LinkMapParseError('truncatedTitleMatches entries must be objects');
+    }
+    const e = item as Record<string, unknown>;
+    if (
+      typeof e.guid !== 'string' ||
+      typeof e.title !== 'string' ||
+      typeof e.normalizedTitle !== 'string' ||
+      typeof e.vaultNormalizedStem !== 'string' ||
+      typeof e.path !== 'string'
+    ) {
+      throw new LinkMapParseError('truncatedTitleMatches entry missing required string fields');
+    }
+    out.push({
+      guid: normalizeEvernoteGuid(e.guid),
+      title: e.title,
+      normalizedTitle: e.normalizedTitle,
+      vaultNormalizedStem: e.vaultNormalizedStem,
+      path: e.path,
+    });
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 export function buildLinkMapFile(
@@ -102,6 +139,7 @@ export function buildLinkMapFile(
   snapshotPath: string,
   guidToPath: ReadonlyMap<string, string>,
   overridesPath?: string | undefined,
+  truncatedTitleMatches?: readonly TruncatedTitleMatch[] | undefined,
 ): LinkMapFile {
   const o: Record<string, string> = {};
   for (const [g, p] of [...guidToPath].sort(([a], [b]) => a.localeCompare(b))) {
@@ -114,8 +152,14 @@ export function buildLinkMapFile(
     snapshotPath,
     guidToPath: o,
   };
-  if (overridesPath !== undefined) {
-    return { ...base, overridesPath };
+  const withOverrides = overridesPath !== undefined ? { ...base, overridesPath } : base;
+  if (truncatedTitleMatches !== undefined && truncatedTitleMatches.length > 0) {
+    return {
+      ...withOverrides,
+      truncatedTitleMatches: [...truncatedTitleMatches].sort((a, b) =>
+        a.guid.localeCompare(b.guid),
+      ),
+    };
   }
-  return base;
+  return withOverrides;
 }
