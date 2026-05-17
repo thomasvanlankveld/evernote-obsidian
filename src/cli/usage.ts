@@ -21,7 +21,7 @@ export function usage(): string {
     '  run        Chain snapshot → correlate → unescape-links → rewrite → fix-resources (typical one-shot fix; --db unless --snapshot/--map reuse intermediates).',
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  check      Compare Evernote snapshot/DB note count to vault markdown count (preflight hints; no link map).',
-    '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
+    '  snapshot   Export Evernote note metadata from an evernote-backup SQLite DB to JSON (not a vault snapshot).',
     '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
     '  correlate  Join snapshot GUIDs to vault paths (evernote-guid frontmatter, else title); optional overrides JSON.',
     '  guid-backfill  Write missing evernote-guid frontmatter from a correlated snapshot (dry-run by default).',
@@ -56,7 +56,7 @@ export function usage(): string {
     '  --only                         With unescape-links, limit to vault-relative path prefix (repeatable)',
     '  --skip-unescape-links          On run, omit the unescape-links step (Evernote URL rewrite only)',
     '',
-    '  On correlate failure (exit 1), stderr shows a one-line hint plus compact counts; use --verbose for the legacy full JSON on stderr.',
+    '  On correlate failure (exit 1), stderr shows a hint, vault/Evernote context, and next steps. Compact summary JSON is written when stderr is not a TTY (or with --json run output); use --verbose for full report JSON on stderr.',
     '  evernote-backup: https://github.com/vzhd1701/evernote-backup',
     '',
   ].join('\n');

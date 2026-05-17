@@ -22,6 +22,11 @@ export interface CorrelationFailureCounts {
   vaultGuidCollisions: number;
 }
 
+export interface CorrelationVaultContext {
+  vaultMarkdownCount: number;
+  vaultWithGuidCount: number;
+}
+
 export interface CorrelationFailureReport {
   ok: false;
   reason: CorrelationFailureReason;
@@ -39,7 +44,9 @@ export interface CorrelationFailureSummary {
   reason: CorrelationFailureReason;
   reportPath: string;
   snapshotNotes: number;
+  matchedCount?: number | undefined;
   counts: CorrelationFailureCounts;
+  vault?: CorrelationVaultContext | undefined;
 }
 
 export function correlationFailureFromCorrelateResult(
@@ -86,18 +93,28 @@ export function buildCorrelationFailureSummary(
   report: CorrelationFailureReport,
   reportPath: string,
   snapshotNotes: number,
+  options?: {
+    matchedCount?: number | undefined;
+    vault?: CorrelationVaultContext | undefined;
+  },
 ): CorrelationFailureSummary {
   return {
     ok: false,
     reason: report.reason,
     reportPath,
     snapshotNotes,
+    matchedCount: options?.matchedCount,
     counts: correlationFailureCounts(report),
+    vault: options?.vault,
   };
 }
 
-export function formatCorrelationFailureHint(summary: CorrelationFailureSummary): string {
-  const { counts, snapshotNotes, reportPath, reason } = summary;
+function formatEvernoteNoteCount(n: number): string {
+  return `${n} Evernote note${n === 1 ? '' : 's'}`;
+}
+
+function formatCorrelateFailureDetail(summary: CorrelationFailureSummary): string {
+  const { counts, snapshotNotes, matchedCount, reason } = summary;
   if (reason === 'vault_index_collisions') {
     const parts: string[] = [];
     if (counts.vaultTitleCollisions > 0) {
@@ -106,13 +123,12 @@ export function formatCorrelationFailureHint(summary: CorrelationFailureSummary)
     if (counts.vaultGuidCollisions > 0) {
       parts.push(`${counts.vaultGuidCollisions} vault evernote-guid collision(s)`);
     }
-    const detail = parts.length > 0 ? parts.join(', ') : 'vault index collisions';
-    return `correlate: ${detail} — see ${reportPath}\n`;
+    return parts.length > 0 ? parts.join(', ') : 'vault index collisions';
   }
 
   const parts: string[] = [];
-  if (snapshotNotes > 0) {
-    parts.push(`${snapshotNotes} snapshot note${snapshotNotes === 1 ? '' : 's'}`);
+  if (matchedCount !== undefined) {
+    parts.push(`${matchedCount} matched`);
   }
   if (counts.unmatched > 0) {
     parts.push(`${counts.unmatched} unmatched`);
@@ -129,11 +145,25 @@ export function formatCorrelationFailureHint(summary: CorrelationFailureSummary)
   if (counts.invalidOverrides > 0) {
     parts.push(`${counts.invalidOverrides} invalid override(s)`);
   }
-  const detail = parts.length > 0 ? parts.join(', ') : 'correlation failed';
+  const breakdown = parts.length > 0 ? parts.join(', ') : 'correlation failed';
+  if (snapshotNotes > 0) {
+    return `${formatEvernoteNoteCount(snapshotNotes)} → vault: ${breakdown}`;
+  }
+  return breakdown;
+}
+
+export function formatCorrelationFailureHint(summary: CorrelationFailureSummary): string {
+  const { reportPath } = summary;
+  const detail = formatCorrelateFailureDetail(summary);
   return `correlate: ${detail} — see ${reportPath}\n`;
 }
 
-/** Strip correlate stderr hint prefix and report path for unified `run` human lines. */
+/** Detail line for `run` human summary (no command prefix or report path). */
+export function formatCorrelateRunDetail(summary: CorrelationFailureSummary): string {
+  return formatCorrelateFailureDetail(summary);
+}
+
+/** @deprecated Use {@link formatCorrelateRunDetail}. */
 export function correlationHintForRun(hintLine: string): string {
   const trimmed = hintLine.replace(/^correlate:\s*/, '').trim();
   const seeIdx = trimmed.indexOf(' — see ');
@@ -141,6 +171,119 @@ export function correlationHintForRun(hintLine: string): string {
     return trimmed.slice(0, seeIdx);
   }
   return trimmed;
+}
+
+function shouldSuggestGuidBackfill(summary: CorrelationFailureSummary): boolean {
+  const { counts, vault } = summary;
+  if (counts.unmatched <= 0 || vault === undefined) {
+    return false;
+  }
+  if (vault.vaultMarkdownCount === 0) {
+    return false;
+  }
+  return vault.vaultWithGuidCount < vault.vaultMarkdownCount * 0.5;
+}
+
+export function formatCorrelationFailureNextSteps(
+  summary: CorrelationFailureSummary,
+  report: CorrelationFailureReport,
+  options: { snapshotPath?: string | undefined; vaultDir?: string | undefined },
+): string {
+  const lines: string[] = ['', 'What failed:'];
+  const { counts, reportPath, reason } = summary;
+
+  if (reason === 'vault_index_collisions') {
+    if (counts.vaultTitleCollisions > 0) {
+      lines.push(
+        `  • vault title collisions (${counts.vaultTitleCollisions}): duplicate normalized titles — see report "collisions"`,
+      );
+    }
+    if (counts.vaultGuidCollisions > 0) {
+      lines.push(
+        `  • vault evernote-guid collisions (${counts.vaultGuidCollisions}): same GUID on multiple files — see report "guidCollisions"`,
+      );
+    }
+    lines.push('', 'Next steps:');
+    lines.push('  • Resolve duplicate titles or GUIDs in the vault before correlating.');
+    lines.push(`  • Open ${reportPath} for conflicting paths.`);
+    return `${lines.join('\n')}\n`;
+  }
+
+  if (counts.unmatched > 0) {
+    lines.push(
+      `  • unmatched (${counts.unmatched}): Evernote notes with no vault file — see report "unmatched"`,
+    );
+  }
+  if (counts.evernoteTitleCollisions > 0) {
+    lines.push(
+      `  • evernoteTitleCollisions (${counts.evernoteTitleCollisions}): duplicate titles in the snapshot — see report "evernoteTitleCollisions"`,
+    );
+  }
+  if (counts.guidTitleMismatches > 0) {
+    lines.push(
+      `  • guidTitleMismatches (${counts.guidTitleMismatches}): GUID vs title path conflict — see report "guidTitleMismatches"`,
+    );
+  }
+  if (counts.duplicateTargetPaths > 0) {
+    lines.push(
+      `  • duplicateTargetPaths (${counts.duplicateTargetPaths}): multiple GUIDs mapped to one path — see report "duplicateTargetPaths"`,
+    );
+  }
+  if (counts.invalidOverrides > 0) {
+    lines.push(
+      `  • invalidOverrides (${counts.invalidOverrides}): bad --overrides entries — see report "invalidOverrides"`,
+    );
+  }
+
+  lines.push('', 'Next steps:');
+  lines.push('  • Confirm --vault-dir points at your imported Markdown (not the Evernote DB).');
+  lines.push(`  • Open ${reportPath} for note titles, GUIDs, and paths.`);
+
+  if (counts.guidTitleMismatches > 0) {
+    lines.push(
+      '  • For GUID/title conflicts, inspect guidTitleMismatches in the report; use --overrides. guid-backfill will not overwrite existing evernote-guid values.',
+    );
+  }
+
+  if (shouldSuggestGuidBackfill(summary)) {
+    const snap = options.snapshotPath ?? '<snapshot>';
+    const vault = options.vaultDir ?? '<vault-dir>';
+    lines.push(
+      '  • Many vault files lack evernote-guid frontmatter; title-only matching is fragile. Try:',
+    );
+    lines.push(`      evernote-obsidian guid-backfill --snapshot ${snap} --vault-dir ${vault}`);
+    lines.push(
+      `      evernote-obsidian guid-backfill --snapshot ${snap} --vault-dir ${vault} --in-place`,
+    );
+    lines.push('    Then re-run correlate or run.');
+  } else if (counts.unmatched > 0) {
+    lines.push(
+      '  • Unmatched notes may be missing from the vault import or need manual --overrides (backfill only helps when files exist but lack evernote-guid).',
+    );
+  }
+
+  if (report.invalidOverrides !== undefined && report.invalidOverrides.length > 0) {
+    lines.push('  • Fix --overrides paths so each GUID points at an indexed vault file.');
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+export function formatVaultCorrelateContext(
+  vaultRootDisplay: string,
+  vault: CorrelationVaultContext,
+  snapshotNotes: number,
+): string {
+  const lines = [
+    `Vault: ${vault.vaultMarkdownCount} markdown file${vault.vaultMarkdownCount === 1 ? '' : 's'} indexed under ${vaultRootDisplay}`,
+    `Evernote: ${snapshotNotes} note${snapshotNotes === 1 ? '' : 's'} in snapshot`,
+  ];
+  if (vault.vaultMarkdownCount > 0) {
+    lines.push(
+      `${vault.vaultWithGuidCount} vault file${vault.vaultWithGuidCount === 1 ? '' : 's'} have evernote-guid frontmatter`,
+    );
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 export async function writeCorrelationFailureReport(
@@ -155,9 +298,15 @@ export interface CorrelateFailureOutputOptions {
   reportPath: string;
   reportPathDisplay: string;
   snapshotNotes: number;
+  matchedCount?: number | undefined;
+  vault?: CorrelationVaultContext | undefined;
+  snapshotPath?: string | undefined;
+  vaultDir?: string | undefined;
   verbose: boolean;
   /** When true, only write the report file (no stderr hint/JSON). */
   quiet?: boolean | undefined;
+  /** TTY / human run: hint and next-steps only (no compact summary JSON on stderr). */
+  interactive?: boolean | undefined;
 }
 
 export async function emitCorrelateFailure(
@@ -173,9 +322,20 @@ export async function emitCorrelateFailure(
     report,
     options.reportPathDisplay,
     options.snapshotNotes,
+    {
+      matchedCount: options.matchedCount,
+      vault: options.vault,
+    },
   );
   streams.stderr.write(formatCorrelationFailureHint(summary));
-  if (!options.quiet) {
+  streams.stderr.write(
+    formatCorrelationFailureNextSteps(summary, report, {
+      snapshotPath: options.snapshotPath,
+      vaultDir: options.vaultDir,
+    }),
+  );
+  const emitCompact = options.interactive !== true && !options.quiet;
+  if (emitCompact) {
     streams.stderr.write(`${JSON.stringify(summary, null, 2)}\n`);
   }
   if (options.verbose) {

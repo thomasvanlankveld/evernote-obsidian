@@ -36,6 +36,8 @@ export type CorrelateResult =
   | { ok: true; guidToPath: ReadonlyMap<string, string> }
   | {
       ok: false;
+      /** Notes successfully joined before the run failed closed. */
+      matchedCount: number;
       evernoteTitleCollisions: EvernoteTitleCollision[];
       unmatched: UnmatchedNote[];
       invalidOverrides: InvalidOverride[];
@@ -207,6 +209,7 @@ export function correlateSnapshotToGuidPaths(
     guidTitleMismatches.sort((a, b) => a.guid.localeCompare(b.guid));
     return {
       ok: false,
+      matchedCount: guidToPath.size,
       evernoteTitleCollisions,
       unmatched,
       invalidOverrides,
@@ -234,6 +237,7 @@ export function correlateSnapshotToGuidPaths(
     duplicateTargetPaths.sort((a, b) => a.path.localeCompare(b.path));
     return {
       ok: false,
+      matchedCount: guidToPath.size,
       evernoteTitleCollisions: [],
       unmatched: [],
       invalidOverrides: [],

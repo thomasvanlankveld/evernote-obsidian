@@ -1,4 +1,4 @@
-import { relative } from 'node:path';
+import { basename, relative } from 'node:path';
 import type { MainStreams } from './cliTypes.ts';
 import type { PipelineStepResult, StepId } from './pipelineStep.ts';
 import type { ResolvedRunOutput } from './runOutput.ts';
@@ -10,6 +10,17 @@ const STEP_LABELS: Record<StepId, string> = {
   rewrite: 'rewrite',
   'fix-resources': 'fix-resources',
 };
+
+const STEP_SUBTITLES: Partial<Record<StepId, string>> = {
+  snapshot: 'Evernote export',
+  correlate: 'vault matching',
+};
+
+function formatStepLabel(id: StepId): string {
+  const name = STEP_LABELS[id];
+  const subtitle = STEP_SUBTITLES[id];
+  return subtitle !== undefined ? `${name} (${subtitle})` : name;
+}
 
 function displayPath(absOrRel: string, cwd: string): string {
   const rel = relative(cwd, absOrRel);
@@ -33,8 +44,10 @@ function formatSnapshotLine(step: PipelineStepResult, cwd: string): string {
   const summary = step.summary;
   const count = typeof summary?.count === 'number' ? summary.count : undefined;
   const path = typeof summary?.path === 'string' ? displayPath(summary.path, cwd) : undefined;
+  const db = typeof summary?.db === 'string' ? basename(summary.db) : undefined;
   if (count !== undefined && path !== undefined) {
-    return `${count} note${count === 1 ? '' : 's'} → ${path}`;
+    const source = db !== undefined ? ` from Evernote DB (${db})` : ' from Evernote DB';
+    return `${count} note${count === 1 ? '' : 's'}${source} → ${path}`;
   }
   if (path !== undefined) {
     return path;
@@ -42,10 +55,10 @@ function formatSnapshotLine(step: PipelineStepResult, cwd: string): string {
   return step.status === 'skipped' ? 'skipped' : '';
 }
 
-function correlateSecondaryLine(step: PipelineStepResult): string | undefined {
+function correlateSecondaryLine(step: PipelineStepResult, cwd: string): string | undefined {
   const reportPath = step.summary?.reportPath;
   if (typeof reportPath === 'string' && reportPath !== '') {
-    return `see ${reportPath}`;
+    return `details: ${displayPath(reportPath, cwd)}`;
   }
   return undefined;
 }
@@ -127,13 +140,13 @@ export function pipelineExitCode(steps: readonly PipelineStepResult[]): number {
 export function formatHumanReport(steps: readonly PipelineStepResult[], cwd: string): string {
   const lines: string[] = ['evernote-obsidian run', ''];
   for (const step of steps) {
-    const label = STEP_LABELS[step.id];
+    const label = formatStepLabel(step.id);
     const icon = stepIcon(step.status);
     const detail = formatStepPrimaryLine(step, cwd);
-    const pad = ' '.repeat(Math.max(1, 14 - label.length));
+    const pad = ' '.repeat(Math.max(1, 22 - label.length));
     lines.push(`  ${icon} ${label}${pad}${detail}`);
     if (step.id === 'correlate' && (step.status === 'failed' || step.status === 'error')) {
-      const secondary = correlateSecondaryLine(step);
+      const secondary = correlateSecondaryLine(step, cwd);
       if (secondary !== undefined) {
         lines.push(`               ${secondary}`);
       }
