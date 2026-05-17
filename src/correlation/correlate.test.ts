@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { NoteRecord } from '../evernote/noteRecord.ts';
+import { rewriteMarkdownWithGuidMap } from '../vault/rewriteEvernoteLinks.ts';
 import { correlateSnapshotToGuidPaths, vaultIndexResultToCorrelationInput } from './correlate.ts';
 
 const vaultPaths = ['first.md', 'sub/second note.md', 'third.md'] as const;
@@ -141,6 +142,44 @@ describe('correlateSnapshotToGuidPaths', () => {
       assert.equal(r.duplicateTargetPaths.length, 1);
       assert.deepEqual(r.duplicateTargetPaths[0]?.guids.sort(), ['x', 'y']);
     }
+  });
+
+  it('lowercases guidToPath keys when snapshot GUIDs are uppercase', () => {
+    const notes: NoteRecord[] = [
+      {
+        guid: 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+        title: 'First',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+    ];
+    const r = correlateSnapshotToGuidPaths(notes, makeVault());
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.guidToPath.get('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'), 'first.md');
+    }
+  });
+
+  it('correlate + rewrite succeeds with uppercase snapshot GUID and lowercase URL', () => {
+    const notes: NoteRecord[] = [
+      {
+        guid: 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+        title: 'First',
+        updated: '1970-01-01T00:00:00.000Z',
+      },
+    ];
+    const correlated = correlateSnapshotToGuidPaths(notes, makeVault());
+    assert.equal(correlated.ok, true);
+    if (!correlated.ok) {
+      return;
+    }
+    const src = '[x](https://www.evernote.com/shard/s308/n/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/y)';
+    const { content, replaced, skippedUnmapped } = rewriteMarkdownWithGuidMap(
+      src,
+      correlated.guidToPath,
+    );
+    assert.equal(replaced, 1);
+    assert.equal(skippedUnmapped, 0);
+    assert.equal(content, '[[first.md|x]]');
   });
 
   it('prefers override over automatic title match for a single note', () => {

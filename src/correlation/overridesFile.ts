@@ -1,3 +1,5 @@
+import { normalizeEvernoteGuid } from '../evernote/noteRecord.ts';
+
 /**
  * Optional JSON overrides for Phase 5 correlation (GUID → vault path, disambiguation).
  */
@@ -32,7 +34,7 @@ export function parseCorrelationOverridesJson(raw: string): Map<string, string> 
     if (trimmed === '') {
       throw new Error(`overrides: byGuid["${guid}"] path must be non-empty`);
     }
-    out.set(guid, trimmed.split('\\').join('/'));
+    out.set(normalizeEvernoteGuid(guid), trimmed.split('\\').join('/'));
   }
   return out;
 }

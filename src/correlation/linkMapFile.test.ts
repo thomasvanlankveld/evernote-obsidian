@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { LinkMapParseError, parseLinkMapJson } from './linkMapFile.ts';
+import { buildLinkMapFile, LinkMapParseError, parseLinkMapJson } from './linkMapFile.ts';
+
+describe('buildLinkMapFile', () => {
+  it('lowercases guidToPath keys', () => {
+    const file = buildLinkMapFile(
+      '/vault',
+      '/snap',
+      new Map([['AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE', 'n.md']]),
+    );
+    assert.equal(file.guidToPath['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'], 'n.md');
+  });
+});
 
 describe('parseLinkMapJson', () => {
   it('parses a valid envelope and lowercases GUID keys', () => {

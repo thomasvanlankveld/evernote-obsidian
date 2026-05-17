@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import type { NoteRecord } from './noteRecord.ts';
+import { type NoteRecord, normalizeEvernoteGuid } from './noteRecord.ts';
 
 const UPDATED_UNKNOWN = '1970-01-01T00:00:00.000Z';
 
@@ -65,7 +65,7 @@ export function readNoteRecordsFromEvernoteBackupDb(
     const out: NoteRecord[] = [];
     for (const row of rows) {
       out.push({
-        guid: row.guid,
+        guid: normalizeEvernoteGuid(row.guid),
         title: row.title,
         updated: UPDATED_UNKNOWN,
       });

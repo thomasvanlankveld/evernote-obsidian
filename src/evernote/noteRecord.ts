@@ -1,3 +1,8 @@
+/** Canonical Evernote note GUID key shape (lowercase) for maps and lookups. */
+export function normalizeEvernoteGuid(guid: string): string {
+  return guid.toLowerCase();
+}
+
 /**
  * Minimal Evernote note metadata for title ↔ vault correlation (Phase 3+).
  * Content is not stored in the snapshot.

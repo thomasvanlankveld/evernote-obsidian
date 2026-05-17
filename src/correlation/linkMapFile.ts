@@ -1,3 +1,5 @@
+import { normalizeEvernoteGuid } from '../evernote/noteRecord.ts';
+
 /**
  * On-disk link map: Evernote note GUID → vault-relative Markdown path (Phase 5 output).
  */
@@ -69,7 +71,7 @@ export function buildLinkMapFile(
 ): LinkMapFile {
   const o: Record<string, string> = {};
   for (const [g, p] of [...guidToPath].sort(([a], [b]) => a.localeCompare(b))) {
-    o[g] = p;
+    o[normalizeEvernoteGuid(g)] = p;
   }
   const base: LinkMapFile = {
     version: 1,

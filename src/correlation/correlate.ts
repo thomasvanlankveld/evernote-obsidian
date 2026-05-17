@@ -1,4 +1,4 @@
-import type { NoteRecord } from '../evernote/noteRecord.ts';
+import { type NoteRecord, normalizeEvernoteGuid } from '../evernote/noteRecord.ts';
 import { normalizeTitle } from '../vault/vaultIndex.ts';
 
 export interface EvernoteTitleCollision {
@@ -55,6 +55,11 @@ export function correlateSnapshotToGuidPaths(
   vault: VaultIndexForCorrelation,
   overridesByGuid: ReadonlyMap<string, string> = new Map(),
 ): CorrelateResult {
+  const overrides = new Map<string, string>();
+  for (const [guid, path] of overridesByGuid) {
+    overrides.set(normalizeEvernoteGuid(guid), path);
+  }
+
   const buckets = new Map<string, NoteRecord[]>();
   for (const n of notes) {
     const key = normalizeTitle(n.title);
@@ -72,13 +77,14 @@ export function correlateSnapshotToGuidPaths(
   const guidToPath = new Map<string, string>();
 
   const resolvePath = (guid: string, rel: string): string | undefined => {
+    const normGuid = normalizeEvernoteGuid(guid);
     const path = rel.split('\\').join('/').trim();
     if (path === '') {
-      invalidOverrides.push({ guid, path: rel, reason: 'empty_path' });
+      invalidOverrides.push({ guid: normGuid, path: rel, reason: 'empty_path' });
       return undefined;
     }
     if (!vault.indexedPaths.has(path)) {
-      invalidOverrides.push({ guid, path, reason: 'unknown_path' });
+      invalidOverrides.push({ guid: normGuid, path, reason: 'unknown_path' });
       return undefined;
     }
     return path;
@@ -86,7 +92,7 @@ export function correlateSnapshotToGuidPaths(
 
   for (const [, group] of buckets) {
     if (group.length > 1) {
-      const withoutOverride = group.filter((n) => !overridesByGuid.has(n.guid));
+      const withoutOverride = group.filter((n) => !overrides.has(normalizeEvernoteGuid(n.guid)));
       if (withoutOverride.length > 0) {
         const head = group[0];
         if (head === undefined) {
@@ -94,18 +100,19 @@ export function correlateSnapshotToGuidPaths(
         }
         evernoteTitleCollisions.push({
           normalizedTitle: normalizeTitle(head.title),
-          guids: group.map((n) => n.guid).sort(),
+          guids: group.map((n) => normalizeEvernoteGuid(n.guid)).sort(),
         });
         continue;
       }
       for (const n of group) {
-        const raw = overridesByGuid.get(n.guid);
+        const guid = normalizeEvernoteGuid(n.guid);
+        const raw = overrides.get(guid);
         if (raw === undefined) {
           continue;
         }
-        const p = resolvePath(n.guid, raw);
+        const p = resolvePath(guid, raw);
         if (p !== undefined) {
-          guidToPath.set(n.guid, p);
+          guidToPath.set(guid, p);
         }
       }
       continue;
@@ -115,11 +122,12 @@ export function correlateSnapshotToGuidPaths(
     if (n === undefined) {
       continue;
     }
-    const fromOverride = overridesByGuid.get(n.guid);
+    const guid = normalizeEvernoteGuid(n.guid);
+    const fromOverride = overrides.get(guid);
     if (fromOverride !== undefined) {
-      const p = resolvePath(n.guid, fromOverride);
+      const p = resolvePath(guid, fromOverride);
       if (p !== undefined) {
-        guidToPath.set(n.guid, p);
+        guidToPath.set(guid, p);
       }
       continue;
     }
@@ -127,9 +135,9 @@ export function correlateSnapshotToGuidPaths(
     const nt = normalizeTitle(n.title);
     const path = vault.byNormalizedTitle.get(nt);
     if (path === undefined) {
-      unmatched.push({ guid: n.guid, title: n.title, normalizedTitle: nt });
+      unmatched.push({ guid, title: n.title, normalizedTitle: nt });
     } else {
-      guidToPath.set(n.guid, path);
+      guidToPath.set(guid, path);
     }
   }
 

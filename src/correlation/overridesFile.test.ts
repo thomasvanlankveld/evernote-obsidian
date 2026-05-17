@@ -23,6 +23,16 @@ describe('parseCorrelationOverridesJson', () => {
     assert.throws(() => parseCorrelationOverridesJson(JSON.stringify({ version: 2 })), /version/);
   });
 
+  it('lowercases byGuid keys', () => {
+    const m = parseCorrelationOverridesJson(
+      JSON.stringify({
+        version: 1,
+        byGuid: { 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE': 'n.md' },
+      }),
+    );
+    assert.equal(m.get('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'), 'n.md');
+  });
+
   it('throws when byGuid value is not a string', () => {
     assert.throws(
       () => parseCorrelationOverridesJson(JSON.stringify({ version: 1, byGuid: { g: 1 } })),

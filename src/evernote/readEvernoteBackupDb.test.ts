@@ -49,6 +49,25 @@ describe('readNoteRecordsFromEvernoteBackupDb', () => {
     }
   });
 
+  it('lowercases GUIDs from SQLite', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'eo-backup-read-'));
+    const dbPath = join(dir, 'upper.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE notes(guid TEXT PRIMARY KEY, title TEXT, is_active BOOLEAN);
+      INSERT INTO notes(guid, title, is_active) VALUES
+        ('AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE', 'Upper GUID', 1);
+    `);
+    db.close();
+    try {
+      const { records } = readNoteRecordsFromEvernoteBackupDb(dbPath);
+      assert.equal(records.length, 1);
+      assert.equal(records[0]?.guid, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('respects maxRecords', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'eo-backup-read-'));
     const dbPath = join(dir, 'en2.db');
