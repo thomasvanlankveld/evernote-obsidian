@@ -25,6 +25,26 @@ export interface FixResourcesFileChange {
   after: string;
 }
 
+/** When using `--out-dir`, prefer a mirrored file from a prior `rewrite` step if present. */
+export async function readMarkdownSourceForFixResources(
+  vaultAbs: string,
+  rel: string,
+  parsed: FixResourcesCliOk,
+): Promise<string> {
+  if (parsed.mode === 'out-dir' && parsed.outDir !== undefined && parsed.outDir !== '') {
+    const mirrored = join(parsed.outDir, rel);
+    try {
+      return await readFile(mirrored, 'utf8');
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        throw e;
+      }
+    }
+  }
+  return readFile(vaultAbs, 'utf8');
+}
+
 export function parseFixResourcesArgs(
   args: readonly string[],
   cwd: string,
@@ -70,8 +90,8 @@ export async function runFixResources(
 
     for (const abs of files) {
       filesScanned++;
-      const content = await readFile(abs, 'utf8');
       const rel = relative(parsed.vaultRoot, abs).split('\\').join('/');
+      const content = await readMarkdownSourceForFixResources(abs, rel, parsed);
       for (const lineChange of collectResourceEmbedLineChanges(content)) {
         changes.push({ file: rel, ...lineChange });
       }

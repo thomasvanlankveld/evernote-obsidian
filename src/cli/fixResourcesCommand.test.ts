@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -49,6 +49,32 @@ describe('fixResourcesCommand', () => {
     assert.equal(j.changes.length, 2);
     assert.equal(j.changes[0]?.file, 'bad-embed.md');
     assert.equal(j.changes[0]?.line, 3);
+  });
+
+  it('out-dir reads mirrored markdown from a prior rewrite step when present', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'fix-resources-out-'));
+    const outDir = join(dir, 'out');
+    const note = join(dir, 'note.md');
+    const mirrored = join(outDir, 'note.md');
+    await writeFile(note, '![[Evernote/Writings/_resources/a.png]]\n', 'utf8');
+    await mkdir(outDir, { recursive: true });
+    await writeFile(
+      mirrored,
+      '[[target.md|alias]]\n![[Evernote/Writings/_resources/a.png]]\n',
+      'utf8',
+    );
+    try {
+      const { streams, out } = makeStreams();
+      const code = await runFixResources({ vaultRoot: dir, mode: 'out-dir', outDir }, streams);
+      assert.equal(code, 0);
+      const j = JSON.parse(out()) as { replacements: number };
+      assert.equal(j.replacements, 1);
+      const next = await readFile(mirrored, 'utf8');
+      assert.match(next, /\[\[target\.md\|alias\]\]/);
+      assert.match(next, /!\[\[_resources\/a\.png\]\]/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('in-place rewrites markdown under the vault', async () => {

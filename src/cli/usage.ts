@@ -15,7 +15,7 @@ export function usage(): string {
     '  evernote-obsidian fix-resources [--vault-dir <path>] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '',
     'Commands:',
-    '  run        Chain snapshot → correlate → rewrite (typical one-shot fix; --db unless --snapshot/--map reuse intermediates).',
+    '  run        Chain snapshot → correlate → rewrite → fix-resources (typical one-shot fix; --db unless --snapshot/--map reuse intermediates).',
     '  index      Build a read-only vault index (normalized titles must be unique).',
     '  snapshot   Read metadata from an evernote-backup SQLite DB and write the JSON snapshot.',
     '  links      Scan Markdown for Evernote note URLs and other evernote.com links (report only).',
