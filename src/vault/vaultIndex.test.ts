@@ -48,6 +48,34 @@ describe('normalizeTitle', () => {
       'lmoph leeuwenschild koster (…)',
     );
   });
+
+  it('removes Importer badLinkRe characters (#, brackets, pipe, caret)', () => {
+    assert.equal(normalizeTitle('Running the Game #58'), 'running the game 58');
+    assert.equal(normalizeTitle('#3 - Episode title'), '3 - episode title');
+    assert.equal(normalizeTitle('RPG - Jousting [Homebrew]'), 'rpg - jousting homebrew');
+    assert.equal(
+      normalizeTitle('LMoPh: [OUTDATED] Sister Garaele'),
+      'lmoph outdated sister garaele',
+    );
+  });
+});
+
+describe('normalizeTitle badLink collisions', () => {
+  it('detects Evernote title collisions when badLink stripping collapses distinct titles', () => {
+    const notes: NoteRecord[] = [
+      { guid: 'g-a', title: 'Note [A]', updated: '1970-01-01T00:00:00.000Z' },
+      { guid: 'g-b', title: 'Note A', updated: '1970-01-01T00:00:00.000Z' },
+    ];
+    const vault = vaultIndexResultToCorrelationInput(new Map(), []);
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, false);
+    if (r.ok) {
+      return;
+    }
+    assert.equal(r.evernoteTitleCollisions.length, 1);
+    assert.equal(r.evernoteTitleCollisions[0]?.normalizedTitle, 'note a');
+    assert.deepEqual(r.evernoteTitleCollisions[0]?.guids.sort(), ['g-a', 'g-b']);
+  });
 });
 
 describe('parseFrontmatterTitle', () => {
