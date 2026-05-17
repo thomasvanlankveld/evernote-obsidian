@@ -15,8 +15,9 @@ import { makeStreams, parseJsonOutputs } from './cliTestHelpers.ts';
 import { main } from './main.ts';
 
 const TARGET_GUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+const TARGET_GUID_UPPER = 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';
 
-function createMinimalBackupDb(dbPath: string): void {
+function createMinimalBackupDb(dbPath: string, guidInDb = TARGET_GUID): void {
   const db = new DatabaseSync(dbPath);
   db.exec(`
     CREATE TABLE notes(
@@ -27,7 +28,7 @@ function createMinimalBackupDb(dbPath: string): void {
       raw_note BLOB
     );
     INSERT INTO notes(guid, title, is_active) VALUES
-      ('${TARGET_GUID}', 'Target Note', 1);
+      ('${guidInDb}', 'Target Note', 1);
   `);
   db.close();
 }
@@ -201,6 +202,50 @@ describe('pipeline snapshot → correlate → rewrite', () => {
       assert.equal(rewriteSummary.replacements, 1, 'run subcommand: replacements');
 
       await assertPipelineArtifacts(snapshotPath, mapPath, outVault, 'run subcommand');
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('run subcommand normalizes uppercase GUID from backup DB through rewrite', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'eo-pipeline-e2e-upper-guid-'));
+    const vaultRoot = join(work, 'vault');
+    const dbPath = join(work, 'en.db');
+    const snapshotPath = join(work, 'out', 'evernote-notes.json');
+    const mapPath = join(work, 'out', 'link-map.json');
+    const outVault = join(work, 'out', 'rewritten-vault');
+
+    try {
+      createMinimalBackupDb(dbPath, TARGET_GUID_UPPER);
+      await seedPipelineVault(vaultRoot);
+
+      const runStreams = makeStreams();
+      const runCode = await main(
+        [
+          'run',
+          '--vault-dir',
+          vaultRoot,
+          '--db',
+          dbPath,
+          '--out',
+          snapshotPath,
+          '--map-out',
+          mapPath,
+          '--out-dir',
+          outVault,
+        ],
+        runStreams.streams,
+        { cwd: work },
+      );
+      assert.equal(runCode, 0, `run uppercase guid: ${runStreams.err()}`);
+      assert.equal(runStreams.err(), '', 'run uppercase guid: stderr');
+
+      const summaries = parseJsonOutputs(runStreams.out());
+      assert.equal(summaries.length, 3);
+      const rewriteSummary = summaries[2] as { replacements: number };
+      assert.equal(rewriteSummary.replacements, 1, 'run uppercase guid: replacements');
+
+      await assertPipelineArtifacts(snapshotPath, mapPath, outVault, 'run uppercase guid');
     } finally {
       await rm(work, { recursive: true, force: true });
     }

@@ -22,6 +22,7 @@ export {
 } from './correlation/linkMapFile.ts';
 export { parseCorrelationOverridesJson } from './correlation/overridesFile.ts';
 export type { EvernoteNoteSnapshot, NoteRecord } from './evernote/noteRecord.ts';
+export { normalizeEvernoteGuid } from './evernote/noteRecord.ts';
 export {
   type ReadEvernoteBackupDbOptions,
   type ReadEvernoteBackupDbResult,

@@ -49,4 +49,21 @@ describe('snapshotFile', () => {
   it('parseSnapshotJson rejects bad version', () => {
     assert.throws(() => parseSnapshotJson('{"version":2,"host":"h","notes":[]}'), /version/);
   });
+
+  it('parseSnapshotJson lowercases note GUIDs', () => {
+    const snap = parseSnapshotJson(
+      JSON.stringify({
+        version: 1,
+        host: 'h',
+        notes: [
+          {
+            guid: 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+            title: 'T',
+            updated: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    assert.equal(snap.notes[0]?.guid, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  });
 });

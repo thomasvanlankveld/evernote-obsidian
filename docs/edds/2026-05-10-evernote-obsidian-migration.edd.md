@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-17 (vault walk: skip `.obsidian` and `.trash`)
+**Last updated:** 2026-05-17 (vault walk: skip `.obsidian` and `.trash`; Phase 5: lowercase GUID map keys documented)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -95,6 +95,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 **Phase 5 implementation notes**
 
 - **CLI:** `evernote-obsidian correlate --snapshot <path> [--vault <path>] [--overrides <path>] [--out <path>]` — default **`./out/link-map.json`**, vault default **`./data`**.
+- **GUID map keys:** Evernote note GUIDs in snapshots, `guidToPath` / `link-map.json`, and override `byGuid` keys are always stored **lowercase** (normalized at ingestion). Link extraction lowercases GUIDs parsed from URLs before lookup; this keeps in-memory and on-disk maps aligned.
 - **Overrides JSON:** `{ "version": 1, "byGuid": { "<guid>": "<vault-relative-path>" } }` — paths must match an indexed `.md` path (POSIX separators). **Evernote duplicate titles** (multiple GUIDs sharing the same normalized title) require **`byGuid` for every GUID** in that group.
 - **Failure cases (exit 1, JSON on stderr):** vault index collisions (same as `index`); **unmatched** snapshot titles; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without full overrides.
 

@@ -1,12 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import type { EvernoteNoteSnapshot, NoteRecord } from './noteRecord.ts';
+import { type EvernoteNoteSnapshot, type NoteRecord, normalizeEvernoteGuid } from './noteRecord.ts';
 
 export function buildSnapshotEnvelope(host: string, notes: NoteRecord[]): EvernoteNoteSnapshot {
   return {
     version: 1,
     writtenAt: new Date().toISOString(),
     host,
-    notes,
+    notes: notes.map((n) => ({ ...n, guid: normalizeEvernoteGuid(n.guid) })),
   };
 }
 
@@ -38,7 +38,11 @@ export function parseSnapshotJson(raw: string): EvernoteNoteSnapshot {
     ) {
       throw new Error('snapshot: each note needs guid, title, updated (string)');
     }
-    notes.push({ guid: r.guid, title: r.title, updated: r.updated });
+    notes.push({
+      guid: normalizeEvernoteGuid(r.guid),
+      title: r.title,
+      updated: r.updated,
+    });
   }
   return {
     version: 1,
