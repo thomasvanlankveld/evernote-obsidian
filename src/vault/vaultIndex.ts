@@ -18,7 +18,7 @@ export type VaultIndexResult =
   | { ok: true; entries: VaultIndexEntry[]; byNormalizedTitle: ReadonlyMap<string, string> }
   | { ok: false; collisions: VaultIndexCollision[] };
 
-const SKIP_DIR_NAMES = new Set(['.git', 'node_modules']);
+const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.obsidian', '.trash']);
 
 /**
  * Normalize a note title for correlation (v1: NFC, trim, lowercase, collapse whitespace).
@@ -65,7 +65,7 @@ function toVaultRelative(vaultRoot: string, absoluteFile: string): string {
 
 /**
  * Absolute paths to every `.md` file under `vaultRoot`, using the same traversal rules as
- * {@link buildVaultIndex} (skip `.git` / `node_modules`, no symlinked directories).
+ * {@link buildVaultIndex} (skip `.git`, `node_modules`, `.obsidian`, `.trash`; no symlinked directories).
  */
 export async function walkVaultMarkdownFiles(vaultRoot: string): Promise<string[]> {
   return collectMarkdownFiles(vaultRoot, vaultRoot);
@@ -121,7 +121,8 @@ function stemFromFilename(filename: string): string {
  * Walk `vaultRoot`, read Markdown titles (frontmatter `title` or filename stem), and build
  * an unambiguous index keyed by {@link normalizeTitle}. Duplicate normalized titles, or any
  * **empty** normalized title, yield `ok: false` with collision-shaped reports.
- * Does not recurse into **symlinked directories** (avoids cycles); symlinked `.md` files are still indexed.
+ * Skips `.git`, `node_modules`, `.obsidian`, and `.trash` by directory name. Does not recurse into
+ * **symlinked directories** (avoids cycles); symlinked `.md` files are still indexed.
  */
 export async function buildVaultIndex(vaultRoot: string): Promise<VaultIndexResult> {
   const absoluteFiles = await collectMarkdownFiles(vaultRoot, vaultRoot);
