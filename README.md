@@ -17,7 +17,7 @@ This CLI uses **metadata from a local Evernote backup** ([evernote-backup](https
 
 ### What to pass as `--vault-dir`
 
-`run`, `index`, `guid-backfill`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. **`--vault`** is an equivalent alias.
+`run`, `check`, `index`, `guid-backfill`, `correlate`, `links`, and `rewrite` all take **`--vault-dir <path>`** as the **root directory to scan** for Markdown. The tool walks that tree recursively (skipping `.git` and `node_modules`); paths in `link-map.json` and wikilinks are **relative to that root**. **`--vault`** is an equivalent alias.
 
 You can point at:
 
@@ -53,11 +53,15 @@ In a terminal, `run` prints a short human-readable step summary (✓/✗ per ste
 3. **`correlate`** — match snapshot rows to vault files → `link-map.json`
 4. **`rewrite`** — replace Evernote note URLs with Obsidian wikilinks (`--dry-run` first, then `--out-dir` or `--in-place`)
 
-Optional: **`index`** (preflight title uniqueness), **`links`** (report remaining Evernote URLs without writing).
+Optional: **`check`** (compare Evernote vs vault note counts before correlate), **`index`** (preflight title/GUID uniqueness), **`links`** (report remaining Evernote URLs without writing).
+
+Run **`check`** before your first **`run`**, after moving the vault folder, or when **`correlate`** reports many unmatched notes — it compares snapshot (or **`--db`**) row count to indexed `.md` files and prints heuristic hints (wrong **`--vault-dir`**, partial import, extra non-Evernote notes). It does not build a link map; use **`correlate`** for that.
 
 ## Commands
 
 - **`evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--report <path>] [--verbose] [--max-notes <n>] [--json | --json-steps] [-q] [--progress] [--dry-run | --out-dir <path> | --in-place [--backup]]`** — Run the full pipeline (ends with **`fix-resources`** for importer `Evernote/Writings/_resources/` embed paths). Requires explicit **`--vault-dir`** (or **`--vault`**). **`--db`** is required on a fresh run; omit it when reusing **`--snapshot`** and/or **`--map`**. **`--out`** sets the snapshot JSON path when generating a snapshot (default `./out/evernote-notes.json`); **`--map-out`** sets the link map path (default `./out/link-map.json`). Pass **`--snapshot`** / **`--map`** to skip those steps. Human summary on stdout in a TTY; **`--json`** for one machine-readable summary; **`--json-steps`** for legacy per-step stdout JSON. Correlate failure output matches **`correlate`** (**`--report`**, **`--verbose`**).
+
+- **`evernote-obsidian check --vault-dir <path> [--snapshot <path> | --db <path>] [--max-notes <n>] [--json]`** — Preflight: count Markdown under **`--vault-dir`** vs Evernote notes in **`--snapshot`** or a quick read of **`--db`** (no correlate, no link map). If **`--snapshot`** / **`--db`** are omitted, uses **`./out/evernote-notes.json`** when that file exists. Human-readable counts on a TTY; hints on stderr; **`--json`** for scripts. Exit **1** only when the vault index has title or **`evernote-guid:`** collisions (same blockers as **`index`** / **`correlate`**); count mismatches are hints only (exit **0**).
 
 - **`evernote-obsidian index [--vault-dir <path>]`** — Walk **`--vault-dir`** (default `./data`) and report whether normalized titles (full Obsidian Importer `sanitizeFileName` rules, including `badLinkRe`) and frontmatter **`evernote-guid:`** values are unique enough for correlation.
 - **`evernote-obsidian snapshot --db <path-to.db> [--out <path>] [--max-notes <n>]`** — Read note **GUID** and **title** from an [evernote-backup](https://github.com/vzhd1701/evernote-backup) SQLite database and write the same JSON snapshot shape as before (`./out/evernote-notes.json` by default; `/out/` is gitignored). Optional **`--max-notes`** caps how many rows are written (notes are ordered by title).

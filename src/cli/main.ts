@@ -4,6 +4,7 @@
 
 export type { MainOptions, MainStreams } from './cliTypes.ts';
 
+import { parseCheckArgs, runCheck } from './checkCommand.ts';
 import type { MainOptions, MainStreams } from './cliTypes.ts';
 import { parseCorrelateArgs, runCorrelate } from './correlateCommand.ts';
 import { parseFixResourcesArgs, runFixResources } from './fixResourcesCommand.ts';
@@ -41,6 +42,15 @@ export async function main(
       return 2;
     }
     return runIndex(parsed.path, streams);
+  }
+
+  if (cmd === 'check') {
+    const parsed = parseCheckArgs(rest, cwd);
+    if (!parsed.ok) {
+      streams.stderr.write(`${parsed.message}\n\n${usage()}`);
+      return 2;
+    }
+    return runCheck(parsed.check, streams, cwd);
   }
 
   if (cmd === 'snapshot') {
