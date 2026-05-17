@@ -49,6 +49,10 @@ export function parseRunArgs(
       pathFlagHandler('snapshot', './out/evernote-notes.json', (path) => {
         inputSnapshotPath = path;
       }),
+      pathFlagHandler('out', './out/evernote-notes.json', (path) => {
+        snapshotOutPath = path;
+        mapOutPath = path;
+      }),
       pathFlagHandler('snapshot-out', './out/evernote-notes.json', (path) => {
         snapshotOutPath = path;
       }),
@@ -56,9 +60,6 @@ export function parseRunArgs(
         existingMapPath = path;
       }),
       pathFlagHandler('map-out', './out/link-map.json', (path) => {
-        mapOutPath = path;
-      }),
-      pathFlagHandler('out', './out/link-map.json', (path) => {
         mapOutPath = path;
       }),
       pathFlagHandler('overrides', './out/correlation-overrides.json', (path) => {

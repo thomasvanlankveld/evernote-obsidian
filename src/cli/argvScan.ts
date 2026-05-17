@@ -18,8 +18,6 @@ export type ArgApplyResult =
 export type ScanContext = {
   cwd: string;
   vaultState: VaultDirFlagState;
-  /** When set, vault flags are recognized but do not update vaultState. */
-  presetVaultRoot?: string | undefined;
 };
 
 export type ArgHandler = (
@@ -31,10 +29,10 @@ export type ArgHandler = (
 
 export type ScanArgvOptions = {
   handlers: readonly ArgHandler[];
-  permissive?: boolean | undefined;
   subcommand?: string | undefined;
   initialVaultState?: VaultDirFlagState | undefined;
-  presetVaultRoot?: string | undefined;
+  /** When true, unknown flags are skipped (used in tests only; production parsers are strict). */
+  permissive?: boolean | undefined;
 };
 
 export type ScanArgvOk = {
@@ -50,7 +48,6 @@ export function scanArgv(
   const ctx: ScanContext = {
     cwd,
     vaultState: options.initialVaultState ?? createVaultDirFlagState(),
-    presetVaultRoot: options.presetVaultRoot,
   };
   const permissive = options.permissive === true;
   const subcommand = options.subcommand ?? 'command';
@@ -90,9 +87,7 @@ export function vaultDirArgHandler(): ArgHandler {
       return { kind: 'error', message: applied.message };
     }
     if (applied.kind === 'handled') {
-      if (ctx.presetVaultRoot === undefined) {
-        ctx.vaultState = applied.state;
-      }
+      ctx.vaultState = applied.state;
       return { kind: 'handled', nextIndex: applied.nextIndex };
     }
     return { kind: 'not-matched' };
