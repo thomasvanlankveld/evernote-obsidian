@@ -1,9 +1,10 @@
 import { mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { readNoteRecordsFromEvernoteBackupDb } from '../evernote/readEvernoteBackupDb.ts';
 import { buildSnapshotEnvelope, writeSnapshotFile } from '../evernote/snapshotFile.ts';
 import { pathFlagHandler, positiveIntFlagHandler, scanArgv } from './argvScan.ts';
 import type { MainStreams } from './cliTypes.ts';
+import { reportPathForDisplay } from './correlateCommand.ts';
 import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
 
 const SNAPSHOT_METADATA_HOST = 'evernote-backup';
@@ -74,7 +75,8 @@ export async function runSnapshot(
     return { exitCode: 2 };
   }
   try {
-    emitStepProgress(invoke, 'snapshot: reading evernote-backup DB…');
+    const dbLabel = basename(parsed.dbPath);
+    emitStepProgress(invoke, `snapshot: reading Evernote backup (${dbLabel})…`);
     const readOpts =
       parsed.maxRecords !== undefined ? { maxRecords: parsed.maxRecords } : undefined;
     const { records, sourceRowCount } = readNoteRecordsFromEvernoteBackupDb(
@@ -85,7 +87,12 @@ export async function runSnapshot(
     const envelope = buildSnapshotEnvelope(SNAPSHOT_METADATA_HOST, records);
     await mkdir(dirname(parsed.outPath), { recursive: true });
     await writeSnapshotFile(parsed.outPath, envelope);
-    emitStepProgress(invoke, `snapshot: wrote ${records.length} notes`);
+    const cwd = invoke?.cwd ?? process.cwd();
+    const outDisplay = reportPathForDisplay(parsed.outPath, cwd);
+    emitStepProgress(
+      invoke,
+      `snapshot: exported ${records.length} note${records.length === 1 ? '' : 's'} → ${outDisplay}`,
+    );
 
     const summary: Record<string, unknown> = {
       ok: true,

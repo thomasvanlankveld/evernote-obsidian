@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-17 (truncated-prefix title correlate)
+**Last updated:** 2026-05-17 (Importer `badLinkRe` + truncated-prefix correlate)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -54,7 +54,7 @@ This project adds automation: **correlate Evernote note identity → vault file*
 **Phase 2 implementation notes**
 
 - **Frontmatter `title:` / `evernote-guid:` (v1):** line-based subset only (first scalar line per key, optional simple quotes), not full YAML — no block scalars, aliases, or other keys. GUIDs are normalized to lowercase in the index.
-- **Title normalization:** before NFC / case / whitespace collapse, apply the same class of transforms as [Obsidian Importer `sanitizeFileName`](https://github.com/obsidianmd/obsidian-importer/blob/master/src/util.ts) for note filenames (`/` → `-`, remove `? < > : * | "` and control chars). Aligns Evernote backup titles with importer filename stems when `evernote-guid:` is absent. Remaining edge cases (`—` vs `-`, `#`, `?`, double spaces in stems) may still need overrides.
+- **Title normalization:** before NFC / case / whitespace collapse, mirror [Obsidian Importer `sanitizeFileName`](https://github.com/obsidianmd/obsidian-importer/blob/master/src/util.ts) for note filenames (`/` → `-`, remove `? < > : * | "`, control chars, and **`badLinkRe`** `[ ] # | ^`). Aligns Evernote backup titles with importer filename stems when `evernote-guid:` is absent. Remaining edge cases (`—` vs `-`, double spaces in stems, truncated filename stems) may still need overrides (**#73** for truncation).
 - **Empty normalized title** (e.g. filename stem trims to nothing): **invalid**; index fails with the same collision-shaped report shape (`normalizedTitle: ""`).
 - **Symlinks:** **symlinked directories are not recursed** (avoids cycles); a regular file that is a symlink is still indexed. Layouts that rely on symlinked folders for notes are unsupported in v1.
 - **CLI:** `--vault` requires a path when the flag is present; other I/O errors surface as **exit 2** and a short message (not only missing root).

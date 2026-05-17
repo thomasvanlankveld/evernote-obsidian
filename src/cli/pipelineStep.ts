@@ -11,8 +11,12 @@ export interface PipelineStepResult {
 }
 
 export interface StepInvokeContext {
+  /** Working directory for relative progress paths (tests). */
+  cwd?: string | undefined;
   /** Suppress per-step stdout JSON (used by `run`). */
   quiet?: boolean | undefined;
+  /** Human TTY run: correlate failure omits compact JSON on stderr. */
+  interactive?: boolean | undefined;
   /** Emit progress lines to stderr when set. */
   progress?: boolean | undefined;
   onProgress?: ((line: string) => void) | undefined;
