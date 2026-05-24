@@ -1,7 +1,7 @@
 # EDD: Evernote → Obsidian link repair
 
 **Status:** Draft  
-**Last updated:** 2026-05-24 (correlate completion + shipped CLI: `--vault-dir`, `run`, `guid-backfill`)
+**Last updated:** 2026-05-24 (correlate + CLI sync; architecture diagram clarifies `run` vs step-by-step)
 
 ## EDD phase completion (before you push / open a PR)
 
@@ -27,21 +27,57 @@ This project adds automation: **correlate Evernote note identity → vault file*
 
 ## 4. High-level architecture
 
-```text
-[Evernote metadata] ──► snapshot ──► gitignored JSON (evernote-notes.json)
-                                              │
-[Vault .md files] ──► index ──────────────────┼──► correlate ──► link map (link-map.json)
-                                              │         │
-                                              │         └── optional: guid-backfill (not in `run`)
-                                              │
-                                              └──► `run` (optional one-shot):
-                                                     snapshot → correlate → unescape-links
-                                                     → rewrite → fix-resources
-                                                     (dry-run / --out-dir / --in-place+backup)
+The pipeline is a **sequence of CLI commands** that produce artifacts and then repair Markdown under **`--vault-dir`**. You can invoke each command yourself, or use **`run`** to execute the same repair chain in one process (see below).
 
-Per-file repair (also invokable standalone):
-  scan ──► broken evernote links ──► rewrite using link map
+### Pipeline (step by step)
+
+```mermaid
+flowchart TB
+  db[("evernote-backup<br/>SQLite (.db)")]
+  vault[("Vault tree<br/>(--vault-dir)")]
+
+  db --> snapshot["snapshot"]
+  snapshot --> notes["evernote-notes.json"]
+
+  notes --> correlate["correlate"]
+  vault --> correlate
+  correlate --> linkmap["link-map.json"]
+
+  notes -.->|"optional; not in run"| backfill["guid-backfill"]
+  backfill -.->|"adds evernote-guid: frontmatter"| vault
+
+  linkmap --> rewrite["rewrite"]
+  vault --> unescape["unescape-links"]
+  unescape --> rewrite
+  rewrite --> fix["fix-resources"]
+  fix --> done[("Repaired Markdown<br/>--dry-run / --out-dir / --in-place")]
+
+  vault --> rewrite
+  vault --> fix
 ```
+
+**Prepare crosswalk:** `snapshot` exports note GUID + title from the backup DB. `correlate` joins that snapshot to vault files (by `evernote-guid:` when present, else normalized title) and writes **`link-map.json`**.
+
+**Repair vault:** `unescape-links` fixes importer-escaped external links, then **`rewrite`** replaces Evernote note URLs with wikilinks using the map, then **`fix-resources`** normalizes importer `_resources/` embed paths. Output mode (`--dry-run`, `--out-dir`, `--in-place`) applies to the repair commands.
+
+**Off the main path (optional):**
+
+- **`guid-backfill`** — after a successful correlate, write missing `evernote-guid:` frontmatter so later correlates prefer GUIDs (run manually once; not part of `run`).
+- **`check`**, **`index`**, **`links`** — preflight or report-only; no link map, no writes to the repair chain.
+
+### How `run` relates
+
+**`evernote-obsidian run` is not another pipeline stage.** It is a convenience wrapper that calls the **same implementations** as the standalone commands, in order:
+
+1. `snapshot` — skipped if you pass **`--snapshot`** (reuse existing JSON) or **`--map`** without a new snapshot
+2. `correlate` — skipped if you pass **`--map`** (reuse existing link map)
+3. `unescape-links` — optional skip via **`--skip-unescape-links`**
+4. `rewrite`
+5. `fix-resources`
+
+When **`--db`** or **`--snapshot`** is set, `run` also prints Evernote-vs-vault count hints on stderr (same family as **`check`**); that preflight does not replace `correlate`.
+
+To reach the same end state **without** `run`, run the commands above yourself in that order (after `npm run build`). Use individual commands when you want to inspect **`evernote-notes.json`** / **`link-map.json`** between steps, retry one step, or run **`guid-backfill`** between correlate and rewrite.
 
 **CLI vault root:** **`--vault-dir <path>`** on all vault-touching commands (default **`./data`**). **`--vault`** is a deprecated alias.
 
