@@ -58,7 +58,7 @@ flowchart TB
 
 **Prepare crosswalk:** `snapshot` exports note GUID + title from the backup DB. `correlate` joins that snapshot to vault files (by `evernote-guid:` when present, else normalized title) and writes **`link-map.json`**.
 
-**Repair vault:** `unescape-links` fixes importer-escaped external links, then **`rewrite`** replaces Evernote note URLs with wikilinks using the map, then **`fix-resources`** normalizes importer `_resources/` embed paths. Output mode (`--dry-run`, `--out-dir`, `--in-place`) applies to the repair commands.
+**Repair vault:** `unescape-links` fixes importer-escaped external links, then **`rewrite`** replaces Evernote note URLs with wikilinks using the map, then **`fix-resources`** normalizes importer `_resources/` embed paths. Output mode (`--dry-run`, `--out-dir`, `--in-place`) applies to the repair commands. The diagram shows inputs from the live **`--vault-dir`** tree; with **`--out-dir`**, **`run`** passes each step’s mirror to the next (e.g. **`rewrite`** reads from **`unescape-links`** output when both use the same **`--out-dir`**).
 
 **Off the main path (optional):**
 
@@ -69,7 +69,7 @@ flowchart TB
 
 **`evernote-obsidian run` is not another pipeline stage.** It is a convenience wrapper that calls the **same implementations** as the standalone commands, in order:
 
-1. `snapshot` — skipped if you pass **`--snapshot`** (reuse existing JSON) or **`--map`** without a new snapshot
+1. `snapshot` — skipped if you pass **`--snapshot`** (reuse existing JSON) or **`--map`** (skips snapshot and correlate)
 2. `correlate` — skipped if you pass **`--map`** (reuse existing link map)
 3. `unescape-links` — optional skip via **`--skip-unescape-links`**
 4. `rewrite`
@@ -149,7 +149,7 @@ Produce a **gitignored JSON snapshot** of note metadata (**GUID**, **title**, pl
 - **Optional GUID backfill (`guid-backfill`, #68):** `evernote-obsidian guid-backfill --snapshot <path> [--vault-dir <path>] [--overrides <path>] [--dry-run | --in-place] [--report <path>] [--verbose]` — correlates like **`correlate`**, then inserts lowercase **`evernote-guid:`** frontmatter when missing (never overwrites a conflicting existing GUID). **`--dry-run`** is the default; **`--in-place`** writes via atomic replace. **Not** part of **`run`** — run explicitly once after import if you want stable GUID-based correlation on later runs.
 - **GUID map keys:** Evernote note GUIDs in snapshots, `guidToPath` / `link-map.json`, and override `byGuid` keys are always stored **lowercase** (normalized at ingestion). Link extraction lowercases GUIDs parsed from URLs before lookup; this keeps in-memory and on-disk maps aligned.
 - **Overrides JSON:** `{ "version": 1, "byGuid": { "<guid>": "<vault-relative-path>" } }` — paths must match an indexed `.md` path (POSIX separators). **Evernote duplicate titles** (multiple GUIDs sharing the same normalized title) require **`byGuid` for every GUID** in that group.
-- **Truncated filename stems (Option A):** after exact normalized title match fails, allow **one** vault stem that is a **strict prefix** of the snapshot normalized title (Importer/OS truncation; minimum stem length 12). Record matches in **`link-map.json`** `truncatedTitleMatches` and **`correlate-report.json`** (`ok: true`). **Fail closed** when two vault stems qualify (**`truncatedPrefixCollisions`**).
+- **Truncated filename stems:** same prefix-matching rules as Phase 2 (**`truncatedTitleMatches`** in **`link-map.json`**; **`truncatedPrefixCollisions`** on ambiguity).
 - **Failure cases (exit 1):** vault index title/`evernote-guid` collisions (same as `index`); **unmatched** snapshot rows; **invalid** override paths; **duplicate target paths** (two GUIDs resolved to the same vault file); **Evernote title collisions** without resolvable GUIDs/overrides; **`guidTitleMismatches`** when frontmatter GUID and title-based resolution disagree; **`truncatedPrefixCollisions`**. By default stderr shows a one-line hint plus compact counts; full arrays are written to **`./out/correlate-report.json`** (**`--report`**). **`--verbose`** / **`--report-stdout`** also print the full JSON on stderr (legacy scripting).
 
 ### Phase 6 — Rewrite

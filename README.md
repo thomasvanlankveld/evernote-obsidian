@@ -38,7 +38,7 @@ evernote-obsidian run --vault-dir /path/to/imported-notes --db /path/to/en_backu
 evernote-obsidian run --vault-dir /path/to/imported-notes --db /path/to/en_backup.db --out-dir ./out/rewritten-vault
 ```
 
-`run` chains **snapshot → correlate → unescape-links → rewrite → fix-resources** (link repair plus importer `_resources` embed paths). Use **`--dry-run`** explicitly if you like (it is the default when neither **`--out-dir`** nor **`--in-place`** is set). Re-run with **`--snapshot`** and/or **`--map`** to skip steps when intermediate files already exist (map-only runs rewrite and fix-resources only).
+`run` chains **snapshot → correlate → unescape-links → rewrite → fix-resources** (link repair plus importer `_resources` embed paths). Use **`--dry-run`** explicitly if you like (it is the default when neither **`--out-dir`** nor **`--in-place`** is set). Re-run with **`--snapshot`** and/or **`--map`** to skip steps when intermediate files already exist. With **`--map`** only (no **`--snapshot`** / **`--db`**), **`run`** skips snapshot and correlate and still runs **`unescape-links`** → **`rewrite`** → **`fix-resources`** (omit unescape via **`--skip-unescape-links`**).
 
 In a terminal, `run` prints a short human-readable step summary (✓/✗ per step and pass/fail). For scripts, use **`--json`** to get one JSON object on stdout with all step summaries, or **`--json-steps`** for the legacy per-step JSON blobs. Non-TTY stdout (pipes, CI) defaults to **`--json`**.
 
