@@ -50,4 +50,26 @@ describe('correlateFailureReportMarkdown', () => {
     assert.match(md, /"byGuid"/);
     assert.match(md, /## Next steps/);
   });
+
+  it('next steps suggest guid-backfill when many vault files lack evernote-guid', () => {
+    const report = correlationFailureFromCorrelateResult({
+      ok: false,
+      matchedCount: 0,
+      evernoteTitleCollisions: [],
+      unmatched: [{ guid: 'g1', title: 'A', normalizedTitle: 'a' }],
+      invalidOverrides: [],
+      duplicateTargetPaths: [],
+      guidTitleMismatches: [],
+      truncatedPrefixCollisions: [],
+    });
+    const summary = buildCorrelationFailureSummary(report, './out/correlate-report.json', 1, {
+      vault: { vaultMarkdownCount: 10, vaultWithGuidCount: 0 },
+    });
+    const md = formatCorrelationFailureMarkdown(report, summary, {
+      reportPathDisplay: './out/correlate-report.json',
+      snapshotPath: './out/evernote-notes.json',
+      vaultDir: './vault',
+    });
+    assert.match(md, /guid-backfill --snapshot \.\/out\/evernote-notes\.json/);
+  });
 });

@@ -1,9 +1,10 @@
 import { extname } from 'node:path';
 import { sanitizeObsidianImporterFileName } from '../vault/vaultIndex.ts';
-import type {
-  CorrelationFailureReason,
-  CorrelationFailureReport,
-  CorrelationFailureSummary,
+import {
+  type CorrelationFailureReason,
+  type CorrelationFailureReport,
+  type CorrelationFailureSummary,
+  shouldSuggestGuidBackfill,
 } from './correlateFailureReport.ts';
 
 export function correlationReportMarkdownPath(jsonReportPath: string): string {
@@ -249,19 +250,12 @@ function formatNextStepsFooter(
     `- Machine-readable detail: \`${jsonPath}\``,
     '- After a **successful** correlate, optionally run `guid-backfill` to add missing frontmatter (see README).',
   ];
-  if (summary.counts.unmatched > 0 && summary.vault !== undefined) {
-    const { vaultMarkdownCount, vaultWithGuidCount } = summary.vault;
-    if (
-      vaultMarkdownCount > 0 &&
-      vaultWithGuidCount < vaultMarkdownCount * 0.5 &&
-      summary.counts.unmatched > 0
-    ) {
-      lines.splice(
-        6,
-        0,
-        `- Many vault files lack \`evernote-guid:\`; try \`evernote-obsidian guid-backfill --snapshot ${snap} --vault-dir ${vault}\` (then re-run correlate).`,
-      );
-    }
+  if (shouldSuggestGuidBackfill(summary)) {
+    lines.splice(
+      6,
+      0,
+      `- Many vault files lack \`evernote-guid:\`; try \`evernote-obsidian guid-backfill --snapshot ${snap} --vault-dir ${vault}\` (then re-run correlate).`,
+    );
   }
   return lines.join('\n');
 }

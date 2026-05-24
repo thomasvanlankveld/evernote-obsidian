@@ -176,9 +176,13 @@ function formatCorrelateFailureDetail(summary: CorrelationFailureSummary): strin
 }
 
 export function formatCorrelationFailureHint(summary: CorrelationFailureSummary): string {
-  const { reportPath } = summary;
+  const { reportPath, reportMarkdownPath } = summary;
   const detail = formatCorrelateFailureDetail(summary);
-  return `correlate: ${detail} — see ${reportPath}\n`;
+  const see =
+    reportMarkdownPath !== undefined
+      ? `see ${reportMarkdownPath} (${reportPath} for JSON)`
+      : `see ${reportPath}`;
+  return `correlate: ${detail} — ${see}\n`;
 }
 
 /** Detail line for `run` human summary (no command prefix or report path). */
@@ -196,7 +200,7 @@ export function correlationHintForRun(hintLine: string): string {
   return trimmed;
 }
 
-function shouldSuggestGuidBackfill(summary: CorrelationFailureSummary): boolean {
+export function shouldSuggestGuidBackfill(summary: CorrelationFailureSummary): boolean {
   const { counts, vault } = summary;
   if (counts.unmatched <= 0 || vault === undefined) {
     return false;
@@ -364,27 +368,11 @@ export async function emitCorrelateFailure(
 ): Promise<CorrelationFailureSummary> {
   await writeCorrelationFailureReport(options.reportPath, report);
 
-  let reportMarkdownPathDisplay: string | undefined;
-  if (options.noReportMd !== true) {
-    const markdownPath = correlationReportMarkdownPath(options.reportPath);
-    const summaryForMd = buildCorrelationFailureSummary(
-      report,
-      options.reportPathDisplay,
-      options.snapshotNotes,
-      {
-        matchedCount: options.matchedCount,
-        vault: options.vault,
-      },
-    );
-    const markdown = formatCorrelationFailureMarkdown(report, summaryForMd, {
-      reportPathDisplay: options.reportPathDisplay,
-      snapshotPath: options.snapshotPath,
-      vaultDir: options.vaultDir,
-    });
-    await writeCorrelationFailureMarkdownReport(markdownPath, markdown);
-    reportMarkdownPathDisplay =
-      options.reportMarkdownPathDisplay ?? correlationReportMarkdownPath(options.reportPathDisplay);
-  }
+  const reportMarkdownPathDisplay =
+    options.noReportMd === true
+      ? undefined
+      : (options.reportMarkdownPathDisplay ??
+        correlationReportMarkdownPath(options.reportPathDisplay));
 
   const summary = buildCorrelationFailureSummary(
     report,
@@ -396,6 +384,16 @@ export async function emitCorrelateFailure(
       reportMarkdownPath: reportMarkdownPathDisplay,
     },
   );
+
+  if (options.noReportMd !== true) {
+    const markdownPath = correlationReportMarkdownPath(options.reportPath);
+    const markdown = formatCorrelationFailureMarkdown(report, summary, {
+      reportPathDisplay: options.reportPathDisplay,
+      snapshotPath: options.snapshotPath,
+      vaultDir: options.vaultDir,
+    });
+    await writeCorrelationFailureMarkdownReport(markdownPath, markdown);
+  }
 
   if (options.quiet === true && !options.verbose) {
     return summary;
