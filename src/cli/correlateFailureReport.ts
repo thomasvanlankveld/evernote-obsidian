@@ -11,6 +11,11 @@ import type {
   UnmatchedNote,
 } from '../correlation/correlate.ts';
 import type { VaultIndexCollision, VaultIndexGuidCollision } from '../vault/vaultIndex.ts';
+import {
+  correlationReportMarkdownPath,
+  formatCorrelationFailureMarkdown,
+  formatCorrelationFailureMarkdownHint,
+} from './correlateFailureReportMarkdown.ts';
 
 export type CorrelationFailureReason = 'correlation_failed' | 'vault_index_collisions';
 
@@ -52,6 +57,8 @@ export interface CorrelationFailureSummary {
   ok: false;
   reason: CorrelationFailureReason;
   reportPath: string;
+  /** Present when a Markdown report was written alongside JSON. */
+  reportMarkdownPath?: string | undefined;
   snapshotNotes: number;
   matchedCount?: number | undefined;
   counts: CorrelationFailureCounts;
@@ -107,12 +114,14 @@ export function buildCorrelationFailureSummary(
   options?: {
     matchedCount?: number | undefined;
     vault?: CorrelationVaultContext | undefined;
+    reportMarkdownPath?: string | undefined;
   },
 ): CorrelationFailureSummary {
   return {
     ok: false,
     reason: report.reason,
     reportPath,
+    reportMarkdownPath: options?.reportMarkdownPath,
     snapshotNotes,
     matchedCount: options?.matchedCount,
     counts: correlationFailureCounts(report),
@@ -204,7 +213,8 @@ export function formatCorrelationFailureNextSteps(
   options: { snapshotPath?: string | undefined; vaultDir?: string | undefined },
 ): string {
   const lines: string[] = ['', 'What failed:'];
-  const { counts, reportPath, reason } = summary;
+  const { counts, reportPath, reportMarkdownPath, reason } = summary;
+  const detailPath = reportMarkdownPath ?? reportPath;
 
   if (reason === 'vault_index_collisions') {
     if (counts.vaultTitleCollisions > 0) {
@@ -219,7 +229,7 @@ export function formatCorrelationFailureNextSteps(
     }
     lines.push('', 'Next steps:');
     lines.push('  • Resolve duplicate titles or GUIDs in the vault before correlating.');
-    lines.push(`  • Open ${reportPath} for conflicting paths.`);
+    lines.push(`  • Open ${detailPath} for conflicting paths.`);
     return `${lines.join('\n')}\n`;
   }
 
@@ -251,7 +261,11 @@ export function formatCorrelationFailureNextSteps(
 
   lines.push('', 'Next steps:');
   lines.push('  • Confirm --vault-dir points at your imported Markdown (not the Evernote DB).');
-  lines.push(`  • Open ${reportPath} for note titles, GUIDs, and paths.`);
+  lines.push(
+    reportMarkdownPath !== undefined
+      ? `  • Open ${reportMarkdownPath} for tabular detail (${reportPath} for scripts).`
+      : `  • Open ${reportPath} for note titles, GUIDs, and paths.`,
+  );
 
   if (counts.guidTitleMismatches > 0) {
     lines.push(
@@ -308,6 +322,14 @@ export async function writeCorrelationFailureReport(
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 }
 
+export async function writeCorrelationFailureMarkdownReport(
+  markdownPath: string,
+  content: string,
+): Promise<void> {
+  await mkdir(dirname(markdownPath), { recursive: true });
+  await writeFile(markdownPath, content, 'utf8');
+}
+
 export async function writeCorrelationTruncationReport(
   reportPath: string,
   report: CorrelationSuccessReport,
@@ -319,12 +341,16 @@ export async function writeCorrelationTruncationReport(
 export interface CorrelateFailureOutputOptions {
   reportPath: string;
   reportPathDisplay: string;
+  /** Display path for Markdown report (defaults derived from reportPath when omitted). */
+  reportMarkdownPathDisplay?: string | undefined;
   snapshotNotes: number;
   matchedCount?: number | undefined;
   vault?: CorrelationVaultContext | undefined;
   snapshotPath?: string | undefined;
   vaultDir?: string | undefined;
   verbose: boolean;
+  /** When true, skip Markdown report generation. */
+  noReportMd?: boolean | undefined;
   /** When true, only write the report file (no stderr hint/JSON). */
   quiet?: boolean | undefined;
   /** TTY / human run: hint and next-steps only (no compact summary JSON on stderr). */
@@ -335,11 +361,31 @@ export async function emitCorrelateFailure(
   streams: { stderr: { write: (chunk: string) => boolean } },
   report: CorrelationFailureReport,
   options: CorrelateFailureOutputOptions,
-): Promise<void> {
+): Promise<CorrelationFailureSummary> {
   await writeCorrelationFailureReport(options.reportPath, report);
-  if (options.quiet === true && !options.verbose) {
-    return;
+
+  let reportMarkdownPathDisplay: string | undefined;
+  if (options.noReportMd !== true) {
+    const markdownPath = correlationReportMarkdownPath(options.reportPath);
+    const summaryForMd = buildCorrelationFailureSummary(
+      report,
+      options.reportPathDisplay,
+      options.snapshotNotes,
+      {
+        matchedCount: options.matchedCount,
+        vault: options.vault,
+      },
+    );
+    const markdown = formatCorrelationFailureMarkdown(report, summaryForMd, {
+      reportPathDisplay: options.reportPathDisplay,
+      snapshotPath: options.snapshotPath,
+      vaultDir: options.vaultDir,
+    });
+    await writeCorrelationFailureMarkdownReport(markdownPath, markdown);
+    reportMarkdownPathDisplay =
+      options.reportMarkdownPathDisplay ?? correlationReportMarkdownPath(options.reportPathDisplay);
   }
+
   const summary = buildCorrelationFailureSummary(
     report,
     options.reportPathDisplay,
@@ -347,8 +393,14 @@ export async function emitCorrelateFailure(
     {
       matchedCount: options.matchedCount,
       vault: options.vault,
+      reportMarkdownPath: reportMarkdownPathDisplay,
     },
   );
+
+  if (options.quiet === true && !options.verbose) {
+    return summary;
+  }
+
   streams.stderr.write(formatCorrelationFailureHint(summary));
   streams.stderr.write(
     formatCorrelationFailureNextSteps(summary, report, {
@@ -356,6 +408,15 @@ export async function emitCorrelateFailure(
       vaultDir: options.vaultDir,
     }),
   );
+
+  const showMarkdownHint =
+    reportMarkdownPathDisplay !== undefined &&
+    options.interactive === true &&
+    !(options.quiet === true && !options.verbose);
+  if (showMarkdownHint && reportMarkdownPathDisplay !== undefined) {
+    streams.stderr.write(formatCorrelationFailureMarkdownHint(reportMarkdownPathDisplay));
+  }
+
   const emitCompact = options.interactive !== true && !options.quiet;
   if (emitCompact) {
     streams.stderr.write(`${JSON.stringify(summary, null, 2)}\n`);
@@ -363,4 +424,5 @@ export async function emitCorrelateFailure(
   if (options.verbose) {
     streams.stderr.write(`${JSON.stringify(report, null, 2)}\n`);
   }
+  return summary;
 }

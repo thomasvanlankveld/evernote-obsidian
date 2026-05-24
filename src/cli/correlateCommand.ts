@@ -17,7 +17,6 @@ import {
 } from './argvScan.ts';
 import type { MainStreams } from './cliTypes.ts';
 import {
-  buildCorrelationFailureSummary,
   type CorrelationVaultContext,
   correlationFailureFromCorrelateResult,
   correlationFailureFromVaultIndex,
@@ -26,6 +25,7 @@ import {
   formatVaultCorrelateContext,
   writeCorrelationTruncationReport,
 } from './correlateFailureReport.ts';
+import { correlationReportMarkdownPath } from './correlateFailureReportMarkdown.ts';
 import { emitStepProgress, type StepInvokeContext, type StepInvokeResult } from './pipelineStep.ts';
 import { isStdoutTty } from './runOutput.ts';
 import { resolveVaultRootFromState } from './vaultDirFlag.ts';
@@ -38,6 +38,7 @@ export interface CorrelateCliOk {
   reportPath: string;
   reportPathDisplay: string;
   verbose: boolean;
+  noReportMd: boolean;
 }
 
 export function reportPathForDisplay(absPath: string, cwd: string): string {
@@ -66,6 +67,7 @@ function vaultContextFromIndex(
 export function correlateOutputArgHandlers(state: {
   reportPath?: string | undefined;
   verbose: boolean;
+  noReportMd: boolean;
 }): ArgHandler[] {
   return [
     pathFlagHandler('report', './out/correlate-report.json', (path) => {
@@ -76,6 +78,9 @@ export function correlateOutputArgHandlers(state: {
     }),
     exactFlagHandler('--report-stdout', () => {
       state.verbose = true;
+    }),
+    exactFlagHandler('--no-report-md', () => {
+      state.noReportMd = true;
     }),
   ];
 }
@@ -92,7 +97,10 @@ export function parseCorrelateArgs(
   let mapPath: string | undefined;
   let overridesPath: string | undefined;
   let outPath = defaultOut;
-  const outputState: { reportPath?: string | undefined; verbose: boolean } = { verbose: false };
+  const outputState: { reportPath?: string | undefined; verbose: boolean; noReportMd: boolean } = {
+    verbose: false,
+    noReportMd: false,
+  };
 
   const scanned = scanArgv(args, cwd, {
     subcommand,
@@ -148,6 +156,7 @@ export function parseCorrelateArgs(
       reportPath,
       reportPathDisplay: reportPathForDisplay(reportPath, cwd),
       verbose: outputState.verbose,
+      noReportMd: outputState.noReportMd,
     },
   };
 }
@@ -163,11 +172,12 @@ function correlateFailureOptions(
   },
 ) {
   const cwd = invoke?.cwd ?? process.cwd();
-  const interactive =
-    invoke?.interactive === true || (invoke === undefined && isStdoutTty(streams));
+  const interactive = invoke?.interactive ?? isStdoutTty(streams);
+  const reportMarkdownPath = correlationReportMarkdownPath(parsed.reportPath);
   return {
     reportPath: parsed.reportPath,
     reportPathDisplay: parsed.reportPathDisplay,
+    reportMarkdownPathDisplay: reportPathForDisplay(reportMarkdownPath, cwd),
     snapshotNotes: options.snapshotNotes,
     matchedCount: options.matchedCount,
     vault: options.vault,
@@ -177,6 +187,7 @@ function correlateFailureOptions(
         : undefined,
     vaultDir: reportPathForDisplay(parsed.vaultRoot, cwd),
     verbose: parsed.verbose,
+    noReportMd: parsed.noReportMd,
     quiet: invoke?.quiet,
     interactive,
   };
@@ -202,14 +213,11 @@ export async function runCorrelate(
       if (vaultCtx.vaultMarkdownCount > 0) {
         streams.stderr.write(formatVaultCorrelateContext(vaultDisplay, vaultCtx, 0));
       }
-      await emitCorrelateFailure(
+      const failureSummary = await emitCorrelateFailure(
         streams,
         report,
         correlateFailureOptions(parsed, invoke, streams, { snapshotNotes: 0, vault: vaultCtx }),
       );
-      const failureSummary = buildCorrelationFailureSummary(report, parsed.reportPathDisplay, 0, {
-        vault: vaultCtx,
-      });
       return {
         exitCode: 1,
         summary: failureSummary as unknown as Record<string, unknown>,
@@ -248,7 +256,7 @@ export async function runCorrelate(
     const result = correlateSnapshotToGuidPaths(snapshot.notes, vaultInput, overrides);
     if (!result.ok) {
       const report = correlationFailureFromCorrelateResult(result);
-      await emitCorrelateFailure(
+      const failureSummary = await emitCorrelateFailure(
         streams,
         report,
         correlateFailureOptions(parsed, invoke, streams, {
@@ -256,12 +264,6 @@ export async function runCorrelate(
           vault: vaultCtx,
           matchedCount: result.matchedCount,
         }),
-      );
-      const failureSummary = buildCorrelationFailureSummary(
-        report,
-        parsed.reportPathDisplay,
-        snapshot.notes.length,
-        { matchedCount: result.matchedCount, vault: vaultCtx },
       );
       return {
         exitCode: 1,

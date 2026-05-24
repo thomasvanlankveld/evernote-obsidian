@@ -456,12 +456,14 @@ describe('cli main', () => {
         ok: boolean;
         reason?: string;
         counts?: { unmatched: number };
+        reportMarkdownPath?: string;
         unmatched?: unknown[];
       }[];
       const summary = stderrObjects.find((o) => o.counts !== undefined);
       assert.equal(summary?.ok, false);
       assert.equal(summary?.reason, 'correlation_failed');
       assert.equal(summary?.counts?.unmatched, 1);
+      assert.equal(summary?.reportMarkdownPath, './correlate-report.md');
       assert.equal(
         stderrObjects.some((o) => o.unmatched !== undefined),
         false,
@@ -473,6 +475,74 @@ describe('cli main', () => {
       };
       assert.equal(report.ok, false);
       assert.equal(report.unmatched.length, 1);
+
+      const mdPath = join(dir, 'correlate-report.md');
+      const md = await readFile(mdPath, 'utf8');
+      assert.match(md, /## Unmatched/);
+      assert.match(md, /Nope Nope/);
+      assert.match(md, /\| gx \|/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('correlate --no-report-md skips Markdown report', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-correlate-no-md-'));
+    const snapPath = join(dir, 'evernote-notes.json');
+    const reportPath = join(dir, 'correlate-report.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [{ guid: 'gx', title: 'Nope Nope', updated: '1970-01-01T00:00:00.000Z' }],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, err } = makeStreams();
+      const code = await main(
+        [
+          'correlate',
+          '--vault-dir',
+          uniqueFixtureVault,
+          '--snapshot',
+          snapPath,
+          '--report',
+          reportPath,
+          '--no-report-md',
+        ],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 1);
+      const summary = parseJsonOutputs(err()).find(
+        (o) => typeof o === 'object' && o !== null && 'counts' in (o as object),
+      ) as { reportMarkdownPath?: string } | undefined;
+      assert.equal(summary?.reportMarkdownPath, undefined);
+      await assert.rejects(() => readFile(join(dir, 'correlate-report.md'), 'utf8'));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('correlate TTY stderr hints at Markdown report', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-correlate-md-hint-'));
+    const snapPath = join(dir, 'evernote-notes.json');
+    const snapshot = {
+      version: 1,
+      writtenAt: '2026-01-01T00:00:00.000Z',
+      host: 'evernote-backup',
+      notes: [{ guid: 'gx', title: 'Nope Nope', updated: '1970-01-01T00:00:00.000Z' }],
+    };
+    await writeFile(snapPath, `${JSON.stringify(snapshot)}\n`, 'utf8');
+    try {
+      const { streams, err } = makeStreams({ stdoutTty: true });
+      const code = await main(
+        ['correlate', '--vault-dir', uniqueFixtureVault, '--snapshot', snapPath],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 1);
+      assert.match(err(), /Human-readable details:.*correlate-report\.md/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
