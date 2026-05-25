@@ -6,7 +6,7 @@ export function usage(): string {
     '',
     'Usage:',
     '  evernote-obsidian [--help|--version]',
-    '  evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--report <path>] [--verbose] [--max-notes <n>] [--json | --json-steps] [-q] [--progress] [--skip-unescape-links] [--dry-run | --out-dir <path> | --in-place [--backup]]',
+    '  evernote-obsidian run --vault-dir <path> [--db <path>] [--snapshot <path>] [--map <path>] [--out <path>] [--map-out <path>] [--overrides <path>] [--report <path>] [--no-report-md] [--verbose] [--max-notes <n>] [--json | --json-steps] [-q] [--progress] [--skip-unescape-links] [--dry-run | --out-dir <path> | --in-place [--backup]]',
     '  evernote-obsidian index [--vault-dir <path>]',
     '  evernote-obsidian check --vault-dir <path> [--snapshot <path> | --db <path>] [--max-notes <n>] [--json]',
     '  evernote-obsidian snapshot --db <path> [--out <path>] [--max-notes <n>]',

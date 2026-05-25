@@ -997,7 +997,11 @@ describe('cli main', () => {
         steps: {
           id: string;
           humanDetail?: string;
-          summary?: { reason?: string; counts?: { unmatched: number } };
+          summary?: {
+            reason?: string;
+            counts?: { unmatched: number };
+            reportMarkdownPath?: string;
+          };
         }[];
       };
       assert.equal(report.ok, false);
@@ -1006,11 +1010,51 @@ describe('cli main', () => {
       assert.match(correlateStep?.humanDetail ?? '', /Evernote note.*unmatched/);
       assert.equal(correlateStep?.summary?.reason, 'correlation_failed');
       assert.equal(correlateStep?.summary?.counts?.unmatched, 1);
+      assert.equal(correlateStep?.summary?.reportMarkdownPath, './out/correlate-report.md');
       assert.match(err(), /Run failed at correlate/);
       const correlateReportFile = JSON.parse(await readFile(reportPath, 'utf8')) as {
         unmatched: { guid: string }[];
       };
       assert.equal(correlateReportFile.unmatched.length, 1);
+      const correlateMarkdownReport = await readFile(
+        join(dir, 'out', 'correlate-report.md'),
+        'utf8',
+      );
+      assert.match(correlateMarkdownReport, /## Unmatched/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('run --no-report-md skips correlate Markdown report', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'evernote-obs-run-unmatched-no-md-'));
+    const dbPath = join(dir, 'en.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE notes(
+        guid TEXT PRIMARY KEY,
+        title TEXT,
+        notebook_guid TEXT,
+        is_active BOOLEAN,
+        raw_note BLOB
+      );
+      INSERT INTO notes(guid, title, is_active) VALUES ('gx', 'Nope Nope', 1);
+    `);
+    db.close();
+    try {
+      const { streams, out } = makeStreams();
+      const code = await main(
+        ['run', '--vault-dir', uniqueFixtureVault, '--db', dbPath, '--no-report-md'],
+        streams,
+        { cwd: dir },
+      );
+      assert.equal(code, 1);
+      const report = JSON.parse(out()) as {
+        steps: { id: string; summary?: { reportMarkdownPath?: string } }[];
+      };
+      const correlateStep = report.steps.find((s) => s.id === 'correlate');
+      assert.equal(correlateStep?.summary?.reportMarkdownPath, undefined);
+      await assert.rejects(() => readFile(join(dir, 'out', 'correlate-report.md'), 'utf8'));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
