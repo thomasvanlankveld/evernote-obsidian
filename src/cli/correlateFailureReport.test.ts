@@ -41,6 +41,13 @@ describe('correlateFailureReport', () => {
       /10 Evernote notes → vault: 7 matched, 2 unmatched/,
     );
     assert.match(formatCorrelationFailureHint(summary), /correlate-report\.json/);
+    const withMd = buildCorrelationFailureSummary(report, './out/correlate-report.json', 10, {
+      matchedCount: 7,
+      reportMarkdownPath: './out/correlate-report.md',
+    });
+    const hintMd = formatCorrelationFailureHint(withMd);
+    assert.match(hintMd, /correlate-report\.md/);
+    assert.match(hintMd, /correlate-report\.json for JSON/);
     assert.equal(
       formatCorrelateRunDetail(summary),
       '10 Evernote notes → vault: 7 matched, 2 unmatched, 1 Evernote title collision(s)',

@@ -40,6 +40,7 @@ export interface RunCliOk {
   correlateReportPath: string;
   correlateReportPathDisplay: string;
   correlateVerbose: boolean;
+  correlateNoReportMd: boolean;
   skipUnescapeLinks: boolean;
   rewrite: Omit<RewriteCliOk, 'mapPath' | 'vaultRoot'>;
   output: RunOutputFlags;
@@ -77,7 +78,11 @@ export function parseRunArgs(
   let overridesPath: string | undefined;
   let maxRecords: number | undefined;
   const rewriteOutput = createRewriteOutputScanState();
-  const correlateOutput: { reportPath?: string | undefined; verbose: boolean } = { verbose: false };
+  const correlateOutput: {
+    reportPath?: string | undefined;
+    verbose: boolean;
+    noReportMd: boolean;
+  } = { verbose: false, noReportMd: false };
   let skipUnescapeLinks = false;
   const output: RunOutputFlags = {
     json: false,
@@ -179,6 +184,7 @@ export function parseRunArgs(
       correlateReportPath,
       correlateReportPathDisplay: reportPathForDisplay(correlateReportPath, cwd),
       correlateVerbose: correlateOutput.verbose,
+      correlateNoReportMd: correlateOutput.noReportMd,
       skipUnescapeLinks,
       rewrite: {
         mode: modeParsed.mode,
@@ -259,6 +265,7 @@ export async function runRun(
         reportPath: parsed.correlateReportPath,
         reportPathDisplay: parsed.correlateReportPathDisplay,
         verbose: parsed.correlateVerbose,
+        noReportMd: parsed.correlateNoReportMd,
       },
       streams,
       invokeBase,

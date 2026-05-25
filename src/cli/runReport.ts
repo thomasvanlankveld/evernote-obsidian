@@ -55,12 +55,20 @@ function formatSnapshotLine(step: PipelineStepResult, cwd: string): string {
   return step.status === 'skipped' ? 'skipped' : '';
 }
 
-function correlateSecondaryLine(step: PipelineStepResult, cwd: string): string | undefined {
+function correlateSecondaryLines(step: PipelineStepResult, cwd: string): string[] {
   const reportPath = step.summary?.reportPath;
-  if (typeof reportPath === 'string' && reportPath !== '') {
-    return `details: ${displayPath(reportPath, cwd)}`;
+  const reportMarkdownPath = step.summary?.reportMarkdownPath;
+  if (typeof reportMarkdownPath === 'string' && reportMarkdownPath !== '') {
+    const lines = [`report: ${displayPath(reportMarkdownPath, cwd)}`];
+    if (typeof reportPath === 'string' && reportPath !== '') {
+      lines.push(`JSON:   ${displayPath(reportPath, cwd)}`);
+    }
+    return lines;
   }
-  return undefined;
+  if (typeof reportPath === 'string' && reportPath !== '') {
+    return [`details: ${displayPath(reportPath, cwd)}`];
+  }
+  return [];
 }
 
 function formatCorrelateLine(step: PipelineStepResult, cwd: string): string {
@@ -146,8 +154,7 @@ export function formatHumanReport(steps: readonly PipelineStepResult[], cwd: str
     const pad = ' '.repeat(Math.max(1, 22 - label.length));
     lines.push(`  ${icon} ${label}${pad}${detail}`);
     if (step.id === 'correlate' && (step.status === 'failed' || step.status === 'error')) {
-      const secondary = correlateSecondaryLine(step, cwd);
-      if (secondary !== undefined) {
+      for (const secondary of correlateSecondaryLines(step, cwd)) {
         lines.push(`               ${secondary}`);
       }
     }

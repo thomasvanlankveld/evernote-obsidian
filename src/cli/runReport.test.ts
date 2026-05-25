@@ -24,6 +24,7 @@ describe('runReport', () => {
         summary: {
           ok: false,
           reportPath: './out/correlate-report.json',
+          reportMarkdownPath: './out/correlate-report.md',
         },
         humanDetail: '2 Evernote notes → vault: 0 matched, 2 unmatched',
       },
@@ -33,7 +34,8 @@ describe('runReport', () => {
     assert.match(text, /2 notes from Evernote DB \(en_backup\.db\)/);
     assert.match(text, /✗ correlate \(vault matching\)/);
     assert.match(text, /2 Evernote notes → vault: 0 matched, 2 unmatched/);
-    assert.match(text, /details: \.\/out\/correlate-report\.json/);
+    assert.match(text, /report: \.\/out\/correlate-report\.md/);
+    assert.match(text, /JSON:\s+\.\/out\/correlate-report\.json/);
     assert.match(text, /Run failed at correlate/);
     assert.equal(pipelineOk(okSteps), false);
   });

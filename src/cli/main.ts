@@ -77,7 +77,7 @@ export async function main(
       streams.stderr.write(`${parsed.message}\n\n${usage()}`);
       return 2;
     }
-    return (await runCorrelate(parsed.correlate, streams)).exitCode;
+    return (await runCorrelate(parsed.correlate, streams, { cwd })).exitCode;
   }
 
   if (cmd === 'guid-backfill') {
