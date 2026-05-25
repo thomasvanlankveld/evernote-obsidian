@@ -98,7 +98,14 @@ function formatEvernoteTitleCollisionsSection(
   const lines = [
     '## Evernote title collisions',
     '',
-    'Multiple snapshot notes share the same normalized title and could not be disambiguated by `evernote-guid:` or imported notebook folders. If these notes should be separate files in the same folder, rename one in Evernote before exporting/importing again; if the Markdown files both exist, add `correlation-overrides.json` entries.',
+    [
+      'Multiple snapshot notes share the same normalized title and could not be disambiguated by',
+      '`evernote-guid:` or imported notebook folders. If these notes are in different Evernote',
+      'notebooks, first make sure the snapshot includes notebook metadata and the import preserved',
+      'notebook folders. If they should be separate files in the same folder, rename one in',
+      'Evernote before exporting/importing again. If both Markdown files exist, add',
+      '`correlation-overrides.json` entries.',
+    ].join(' '),
     '',
   ];
   const first = collisions[0];
@@ -245,7 +252,9 @@ function formatNextStepsFooter(
     '- Confirm `--vault-dir` points at imported Markdown (not the Evernote DB).',
     '- Import missing notes into the vault if counts differ (`check` / `run` preflight).',
     '- Add `evernote-guid:` frontmatter where files exist but lack a GUID.',
-    '- For Evernote title collisions, rename same-folder duplicates in Evernote and re-export/re-import, or create `correlation-overrides.json` if both Markdown files exist.',
+    '- For Evernote title collisions in different notebooks, regenerate the snapshot if it predates notebook metadata support, and confirm the importer created distinct notebook folders.',
+    '- For same-folder title collisions, rename one note in Evernote and re-export/re-import.',
+    '- If both collided Markdown files exist, create `correlation-overrides.json` entries instead.',
     '- Re-run `correlate` or full `run`.',
     `- Machine-readable detail: \`${jsonPath}\``,
     '- After a **successful** correlate, optionally run `guid-backfill` to add missing frontmatter (see README).',

@@ -299,7 +299,13 @@ export function formatCorrelationFailureNextSteps(
   }
   if (counts.evernoteTitleCollisions > 0) {
     lines.push(
-      '  • If collided notes should be separate files in the same imported folder, rename one in Evernote and re-export/re-import; if both Markdown files exist, use --overrides.',
+      '  • For title collisions in different notebooks, regenerate old snapshots and confirm the import preserved notebook folders.',
+    );
+    lines.push(
+      '  • For same-folder title collisions, rename one note in Evernote and re-export/re-import.',
+    );
+    lines.push(
+      '  • If both collided Markdown files exist, use --overrides instead of re-importing.',
     );
   }
 
