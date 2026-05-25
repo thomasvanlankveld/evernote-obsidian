@@ -8,6 +8,8 @@ export interface VaultIndexEntry {
   /** Title from YAML `title` or filename stem */
   title: string;
   normalizedTitle: string;
+  /** Normalized parent path segments, POSIX-separated; empty for files at vault root. */
+  normalizedParentPath: string;
   /** Lowercase Evernote note GUID from frontmatter `evernote-guid:` when present */
   evernoteGuid?: string | undefined;
 }
@@ -27,9 +29,15 @@ export type VaultIndexResult =
       ok: true;
       entries: VaultIndexEntry[];
       byNormalizedTitle: ReadonlyMap<string, string>;
+      byNormalizedTitleCandidates: ReadonlyMap<string, readonly VaultTitleCandidate[]>;
       byEvernoteGuid: ReadonlyMap<string, string>;
     }
   | { ok: false; collisions: VaultIndexCollision[]; guidCollisions: VaultIndexGuidCollision[] };
+
+export interface VaultTitleCandidate {
+  path: string;
+  normalizedParentPath: string;
+}
 
 const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', '.obsidian', '.trash']);
 
@@ -189,10 +197,17 @@ function stemFromFilename(filename: string): string {
   return filename;
 }
 
+function normalizedParentPath(relPath: string): string {
+  const parts = relPath.split('/');
+  parts.pop();
+  return parts.map(normalizeTitle).join('/');
+}
+
 /**
  * Walk `vaultRoot`, read Markdown titles (frontmatter `title` or filename stem), and build
- * an unambiguous index keyed by {@link normalizeTitle}. Duplicate normalized titles, or any
- * **empty** normalized title, yield `ok: false` with collision-shaped reports.
+ * an index keyed by {@link normalizeTitle}. Duplicate normalized titles in the same normalized
+ * parent folder, or any **empty** normalized title, yield `ok: false` with collision-shaped reports.
+ * Duplicate titles in different folders are kept as candidates for notebook-aware correlation.
  * Skips `.git`, `node_modules`, `.obsidian`, and `.trash` by directory name. Does not recurse into
  * **symlinked directories** (avoids cycles); symlinked `.md` files are still indexed.
  */
@@ -209,22 +224,44 @@ export async function buildVaultIndex(vaultRoot: string): Promise<VaultIndexResu
     const title = fmTitle ?? stemFromFilename(fileName);
     const normalizedTitle = normalizeTitle(title);
     const evernoteGuid = parseFrontmatterEvernoteGuid(raw);
-    entries.push({ path: rel, title, normalizedTitle, evernoteGuid });
+    entries.push({
+      path: rel,
+      title,
+      normalizedTitle,
+      normalizedParentPath: normalizedParentPath(rel),
+      evernoteGuid,
+    });
   }
 
-  const byNorm = new Map<string, string[]>();
+  const byNorm = new Map<string, VaultTitleCandidate[]>();
+  const byNormAndParent = new Map<string, string[]>();
   for (const e of entries) {
+    const candidate = { path: e.path, normalizedParentPath: e.normalizedParentPath };
     const list = byNorm.get(e.normalizedTitle);
     if (list) {
-      list.push(e.path);
+      list.push(candidate);
     } else {
-      byNorm.set(e.normalizedTitle, [e.path]);
+      byNorm.set(e.normalizedTitle, [candidate]);
+    }
+
+    const folderKey = `${e.normalizedParentPath}\0${e.normalizedTitle}`;
+    const folderList = byNormAndParent.get(folderKey);
+    if (folderList) {
+      folderList.push(e.path);
+    } else {
+      byNormAndParent.set(folderKey, [e.path]);
     }
   }
 
   const collisions: VaultIndexCollision[] = [];
-  for (const [normalizedTitle, paths] of byNorm) {
-    if (paths.length > 1 || normalizedTitle === '') {
+  for (const [normalizedTitle, candidates] of byNorm) {
+    if (normalizedTitle === '') {
+      collisions.push({ normalizedTitle, paths: candidates.map((c) => c.path).sort() });
+    }
+  }
+  for (const [folderKey, paths] of byNormAndParent) {
+    const normalizedTitle = folderKey.slice(folderKey.indexOf('\0') + 1);
+    if (paths.length > 1 && normalizedTitle !== '') {
       collisions.push({ normalizedTitle, paths: [...paths].sort() });
     }
   }
@@ -256,12 +293,27 @@ export async function buildVaultIndex(vaultRoot: string): Promise<VaultIndexResu
   }
 
   const map = new Map<string, string>();
+  const candidatesMap = new Map<string, readonly VaultTitleCandidate[]>();
   const guidMap = new Map<string, string>();
+  for (const [normalizedTitle, candidates] of byNorm) {
+    candidatesMap.set(normalizedTitle, candidates);
+    if (candidates.length === 1) {
+      const candidate = candidates[0];
+      if (candidate !== undefined) {
+        map.set(normalizedTitle, candidate.path);
+      }
+    }
+  }
   for (const e of entries) {
-    map.set(e.normalizedTitle, e.path);
     if (e.evernoteGuid !== undefined) {
       guidMap.set(e.evernoteGuid, e.path);
     }
   }
-  return { ok: true, entries, byNormalizedTitle: map, byEvernoteGuid: guidMap };
+  return {
+    ok: true,
+    entries,
+    byNormalizedTitle: map,
+    byNormalizedTitleCandidates: candidatesMap,
+    byEvernoteGuid: guidMap,
+  };
 }

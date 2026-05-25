@@ -19,11 +19,19 @@ function createBackupDb(path: string): void {
       is_active BOOLEAN,
       raw_note BLOB
     );
-    INSERT INTO notes(guid, title, is_active) VALUES
-      ('g-trash', 'Trashed', 0),
-      ('g-a', 'Alpha', 1),
-      ('g-b', 'Beta', 1),
-      ('g-null', 'Pending', NULL);
+    CREATE TABLE notebooks(
+      guid TEXT PRIMARY KEY,
+      name TEXT,
+      stack TEXT
+    );
+    INSERT INTO notebooks(guid, name, stack) VALUES
+      ('nb-a', 'Notebook A', 'Stack One'),
+      ('nb-b', 'Notebook B', NULL);
+    INSERT INTO notes(guid, title, notebook_guid, is_active) VALUES
+      ('g-trash', 'Trashed', 'nb-a', 0),
+      ('g-a', 'Alpha', 'nb-a', 1),
+      ('g-b', 'Beta', 'nb-b', 1),
+      ('g-null', 'Pending', NULL, NULL);
   `);
   db.close();
 }
@@ -44,6 +52,9 @@ describe('readNoteRecordsFromEvernoteBackupDb', () => {
       for (const r of records) {
         assert.equal(r.updated, UPDATED_UNKNOWN_ISO_SENTINEL);
       }
+      assert.deepEqual(records[0]?.notebook, { name: 'Notebook A', stack: 'Stack One' });
+      assert.deepEqual(records[1]?.notebook, { name: 'Notebook B' });
+      assert.equal(records[2]?.notebook, undefined);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -66,4 +66,22 @@ describe('snapshotFile', () => {
     );
     assert.equal(snap.notes[0]?.guid, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
   });
+
+  it('round-trips optional notebook metadata', () => {
+    const snap = parseSnapshotJson(
+      JSON.stringify({
+        version: 1,
+        host: 'h',
+        notes: [
+          {
+            guid: 'g1',
+            title: 'T',
+            updated: '2026-01-01T00:00:00.000Z',
+            notebook: { name: 'Notebook A', stack: 'Stack One' },
+          },
+        ],
+      }),
+    );
+    assert.deepEqual(snap.notes[0]?.notebook, { name: 'Notebook A', stack: 'Stack One' });
+  });
 });

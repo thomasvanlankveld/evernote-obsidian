@@ -148,6 +148,89 @@ describe('correlateSnapshotToGuidPaths', () => {
     }
   });
 
+  it('resolves duplicate Evernote titles by notebook folder when vault candidates are distinct', () => {
+    const notes: NoteRecord[] = [
+      {
+        guid: 'a',
+        title: 'Same',
+        updated: '1970-01-01T00:00:00.000Z',
+        notebook: { name: 'Notebook A' },
+      },
+      {
+        guid: 'b',
+        title: 'same',
+        updated: '1970-01-01T00:00:00.000Z',
+        notebook: { name: 'Notebook B' },
+      },
+    ];
+    const paths = ['Notebook A/Same.md', 'Notebook B/same.md'] as const;
+    const vault = vaultIndexResultToCorrelationInput(
+      new Map(),
+      paths,
+      new Map(),
+      new Map(),
+      new Map([
+        [
+          'same',
+          [
+            { path: paths[0], normalizedParentPath: 'notebook a' },
+            { path: paths[1], normalizedParentPath: 'notebook b' },
+          ],
+        ],
+      ]),
+    );
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.guidToPath.get('a'), 'Notebook A/Same.md');
+      assert.equal(r.guidToPath.get('b'), 'Notebook B/same.md');
+    }
+  });
+
+  it('matches notebook folders by suffix so vault roots can include an import wrapper', () => {
+    const notes: NoteRecord[] = [
+      {
+        guid: 'a',
+        title: 'Same',
+        updated: '1970-01-01T00:00:00.000Z',
+        notebook: { name: 'Notebook A', stack: 'Stack One' },
+      },
+      {
+        guid: 'b',
+        title: 'same',
+        updated: '1970-01-01T00:00:00.000Z',
+        notebook: { name: 'Notebook B', stack: 'Stack One' },
+      },
+    ];
+    const vault = vaultIndexResultToCorrelationInput(
+      new Map(),
+      ['Evernote/Stack One/Notebook A/Same.md', 'Evernote/Stack One/Notebook B/same.md'],
+      new Map(),
+      new Map(),
+      new Map([
+        [
+          'same',
+          [
+            {
+              path: 'Evernote/Stack One/Notebook A/Same.md',
+              normalizedParentPath: 'evernote/stack one/notebook a',
+            },
+            {
+              path: 'Evernote/Stack One/Notebook B/same.md',
+              normalizedParentPath: 'evernote/stack one/notebook b',
+            },
+          ],
+        ],
+      ]),
+    );
+    const r = correlateSnapshotToGuidPaths(notes, vault);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.guidToPath.get('a'), 'Evernote/Stack One/Notebook A/Same.md');
+      assert.equal(r.guidToPath.get('b'), 'Evernote/Stack One/Notebook B/same.md');
+    }
+  });
+
   it('resolves duplicate Evernote titles via per-GUID overrides', () => {
     const notes: NoteRecord[] = [
       { guid: 'a', title: 'Same', updated: '1970-01-01T00:00:00.000Z' },

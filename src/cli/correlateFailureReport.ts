@@ -244,7 +244,7 @@ export function formatCorrelationFailureNextSteps(
   }
   if (counts.evernoteTitleCollisions > 0) {
     lines.push(
-      `  • evernoteTitleCollisions (${counts.evernoteTitleCollisions}): duplicate titles in the snapshot — see report "evernoteTitleCollisions"`,
+      `  • evernoteTitleCollisions (${counts.evernoteTitleCollisions}): duplicate snapshot titles not resolved by GUIDs or notebook folders — see report "evernoteTitleCollisions"`,
     );
   }
   if (counts.guidTitleMismatches > 0) {
@@ -296,6 +296,17 @@ export function formatCorrelationFailureNextSteps(
 
   if (report.invalidOverrides !== undefined && report.invalidOverrides.length > 0) {
     lines.push('  • Fix --overrides paths so each GUID points at an indexed vault file.');
+  }
+  if (counts.evernoteTitleCollisions > 0) {
+    lines.push(
+      '  • For title collisions in different notebooks, regenerate old snapshots and confirm the import preserved notebook folders.',
+    );
+    lines.push(
+      '  • For same-folder title collisions, rename one note in Evernote and re-export/re-import.',
+    );
+    lines.push(
+      '  • If both collided Markdown files exist, use --overrides instead of re-importing.',
+    );
   }
 
   return `${lines.join('\n')}\n`;

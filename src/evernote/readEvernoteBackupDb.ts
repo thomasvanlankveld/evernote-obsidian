@@ -39,25 +39,40 @@ export function readNoteRecordsFromEvernoteBackupDb(
 
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    const tableCheck = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='notes'")
-      .get();
-    if (!tableCheck) {
+    if (!tableExists(db, 'notes')) {
       throw new Error(
         'evernote-backup database: missing `notes` table (is this an evernote-backup SQLite file?)',
       );
     }
+    const hasNotebookJoin =
+      tableExists(db, 'notebooks') && tableHasColumn(db, 'notes', 'notebook_guid');
 
     const where = [
-      'WHERE COALESCE(is_active, 1) != 0',
-      "AND guid IS NOT NULL AND guid != ''",
-      'AND title IS NOT NULL',
+      'WHERE COALESCE(notes.is_active, 1) != 0',
+      "AND notes.guid IS NOT NULL AND notes.guid != ''",
+      'AND notes.title IS NOT NULL',
     ].join(' ');
 
-    const countRow = db.prepare(`SELECT COUNT(*) as c FROM notes ${where}`).get() as { c: number };
+    const from = hasNotebookJoin
+      ? 'notes LEFT JOIN notebooks ON notebooks.guid = notes.notebook_guid'
+      : 'notes';
+    const countRow = db.prepare(`SELECT COUNT(*) as c FROM ${from} ${where}`).get() as {
+      c: number;
+    };
     const sourceRowCount = Number(countRow.c);
 
-    const sqlParts = ['SELECT guid, title FROM notes', where, 'ORDER BY title COLLATE NOCASE'];
+    const select = hasNotebookJoin
+      ? [
+          'SELECT notes.guid, notes.title,',
+          'notebooks.name AS notebook_name, notebooks.stack AS notebook_stack',
+          `FROM ${from}`,
+        ].join(' ')
+      : [
+          'SELECT notes.guid, notes.title,',
+          'NULL AS notebook_name, NULL AS notebook_stack',
+          `FROM ${from}`,
+        ].join(' ');
+    const sqlParts = [select, where, 'ORDER BY notes.title COLLATE NOCASE'];
     if (opts?.maxRecords !== undefined) {
       sqlParts.push('LIMIT ?');
     }
@@ -67,15 +82,38 @@ export function readNoteRecordsFromEvernoteBackupDb(
     const rows = (opts?.maxRecords !== undefined ? stmt.all(opts.maxRecords) : stmt.all()) as {
       guid: string;
       title: string;
+      notebook_name: string | null;
+      notebook_stack: string | null;
     }[];
 
     const out: NoteRecord[] = rows.map((row) => ({
       guid: normalizeEvernoteGuid(row.guid),
       title: row.title,
       updated: UPDATED_UNKNOWN,
+      ...(row.notebook_name !== null && row.notebook_name.trim() !== ''
+        ? {
+            notebook: {
+              name: row.notebook_name,
+              ...(row.notebook_stack !== null && row.notebook_stack.trim() !== ''
+                ? { stack: row.notebook_stack }
+                : {}),
+            },
+          }
+        : {}),
     }));
     return { records: out, sourceRowCount };
   } finally {
     db.close();
   }
+}
+
+function tableExists(db: DatabaseSync, tableName: string): boolean {
+  return Boolean(
+    db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(tableName),
+  );
+}
+
+function tableHasColumn(db: DatabaseSync, tableName: string, columnName: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[];
+  return rows.some((row) => row.name === columnName);
 }
