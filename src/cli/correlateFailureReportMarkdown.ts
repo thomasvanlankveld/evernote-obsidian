@@ -98,7 +98,7 @@ function formatEvernoteTitleCollisionsSection(
   const lines = [
     '## Evernote title collisions',
     '',
-    'Multiple snapshot notes share the same normalized title. Add `correlation-overrides.json` entries or rename notes in Evernote.',
+    'Multiple snapshot notes share the same normalized title and could not be disambiguated by `evernote-guid:` or imported notebook folders. If these notes should be separate files in the same folder, rename one in Evernote before exporting/importing again; if the Markdown files both exist, add `correlation-overrides.json` entries.',
     '',
   ];
   const first = collisions[0];
@@ -245,7 +245,7 @@ function formatNextStepsFooter(
     '- Confirm `--vault-dir` points at imported Markdown (not the Evernote DB).',
     '- Import missing notes into the vault if counts differ (`check` / `run` preflight).',
     '- Add `evernote-guid:` frontmatter where files exist but lack a GUID.',
-    '- For Evernote title collisions, create `correlation-overrides.json` (see example above).',
+    '- For Evernote title collisions, rename same-folder duplicates in Evernote and re-export/re-import, or create `correlation-overrides.json` if both Markdown files exist.',
     '- Re-run `correlate` or full `run`.',
     `- Machine-readable detail: \`${jsonPath}\``,
     '- After a **successful** correlate, optionally run `guid-backfill` to add missing frontmatter (see README).',

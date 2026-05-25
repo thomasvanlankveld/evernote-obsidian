@@ -1,5 +1,5 @@
 import { type NoteRecord, normalizeEvernoteGuid } from '../evernote/noteRecord.ts';
-import { normalizeTitle } from '../vault/vaultIndex.ts';
+import { normalizeTitle, type VaultTitleCandidate } from '../vault/vaultIndex.ts';
 
 export interface EvernoteTitleCollision {
   normalizedTitle: string;
@@ -72,6 +72,7 @@ export type CorrelateResult =
 
 export interface VaultIndexForCorrelation {
   byNormalizedTitle: ReadonlyMap<string, string>;
+  byNormalizedTitleCandidates: ReadonlyMap<string, readonly VaultTitleCandidate[]>;
   byEvernoteGuid: ReadonlyMap<string, string>;
   /** Vault-relative path → lowercase Evernote GUID when frontmatter declares one */
   pathToEvernoteGuid: ReadonlyMap<string, string>;
@@ -83,9 +84,19 @@ export function vaultIndexResultToCorrelationInput(
   paths: readonly string[],
   byEvernoteGuid: ReadonlyMap<string, string> = new Map(),
   pathToEvernoteGuid: ReadonlyMap<string, string> = new Map(),
+  byNormalizedTitleCandidates?: ReadonlyMap<string, readonly VaultTitleCandidate[]>,
 ): VaultIndexForCorrelation {
+  const candidates =
+    byNormalizedTitleCandidates ??
+    new Map(
+      [...byNormalizedTitle].map(([normalizedTitle, path]) => [
+        normalizedTitle,
+        [{ path, normalizedParentPath: '' }],
+      ]),
+    );
   return {
     byNormalizedTitle,
+    byNormalizedTitleCandidates: candidates,
     byEvernoteGuid,
     pathToEvernoteGuid,
     indexedPaths: new Set(paths),
@@ -144,6 +155,64 @@ export function findTruncatedPrefixMatch(
     return { kind: 'unique', stem: unique.stem, path: unique.path };
   }
   return { kind: 'none' };
+}
+
+type TitlePathLookup =
+  | { kind: 'none' }
+  | { kind: 'unique'; path: string }
+  | { kind: 'ambiguous'; paths: string[] };
+
+function expectedNotebookPath(note: NoteRecord): string | undefined {
+  const notebook = note.notebook;
+  if (notebook === undefined) {
+    return undefined;
+  }
+  const parts = [
+    ...(notebook.stack !== undefined && notebook.stack.trim() !== '' ? [notebook.stack] : []),
+    notebook.name,
+  ].map(normalizeTitle);
+  const nonEmpty = parts.filter((part) => part !== '');
+  return nonEmpty.length > 0 ? nonEmpty.join('/') : undefined;
+}
+
+function parentPathMatchesNotebook(parentPath: string, notebookPath: string): boolean {
+  return parentPath === notebookPath || parentPath.endsWith(`/${notebookPath}`);
+}
+
+function findNotebookScopedTitlePath(
+  note: NoteRecord,
+  normalizedTitle: string,
+  vault: VaultIndexForCorrelation,
+): TitlePathLookup {
+  const notebookPath = expectedNotebookPath(note);
+  if (notebookPath === undefined) {
+    return { kind: 'none' };
+  }
+  const candidates = vault.byNormalizedTitleCandidates.get(normalizedTitle) ?? [];
+  const matching = candidates
+    .filter((candidate) => parentPathMatchesNotebook(candidate.normalizedParentPath, notebookPath))
+    .map((candidate) => candidate.path);
+  const unique = [...new Set(matching)].sort();
+  if (unique.length === 0) {
+    return { kind: 'none' };
+  }
+  if (unique.length === 1) {
+    const path = unique[0];
+    return path === undefined ? { kind: 'none' } : { kind: 'unique', path };
+  }
+  return { kind: 'ambiguous', paths: unique };
+}
+
+function findTitlePath(
+  note: NoteRecord,
+  normalizedTitle: string,
+  vault: VaultIndexForCorrelation,
+): TitlePathLookup {
+  const exactPath = vault.byNormalizedTitle.get(normalizedTitle);
+  if (exactPath !== undefined) {
+    return { kind: 'unique', path: exactPath };
+  }
+  return findNotebookScopedTitlePath(note, normalizedTitle, vault);
 }
 
 /**
@@ -211,6 +280,19 @@ export function correlateSnapshotToGuidPaths(
       if (head === undefined) {
         continue;
       }
+      const resolvedPaths = new Set<string>();
+      let allResolvedByNotebook = true;
+      for (const n of titleOnlyPending) {
+        const lookup = findNotebookScopedTitlePath(n, normalizeTitle(n.title), vault);
+        if (lookup.kind !== 'unique' || resolvedPaths.has(lookup.path)) {
+          allResolvedByNotebook = false;
+          break;
+        }
+        resolvedPaths.add(lookup.path);
+      }
+      if (allResolvedByNotebook) {
+        continue;
+      }
       evernoteTitleCollisions.push({
         normalizedTitle: normalizeTitle(head.title),
         guids: titleOnlyPending.map((n) => normalizeEvernoteGuid(n.guid)).sort(),
@@ -238,7 +320,8 @@ export function correlateSnapshotToGuidPaths(
     }
 
     const guidPath = vault.byEvernoteGuid.get(guid);
-    const titlePath = vault.byNormalizedTitle.get(nt);
+    const titleLookup = findTitlePath(n, nt, vault);
+    const titlePath = titleLookup.kind === 'unique' ? titleLookup.path : undefined;
 
     if (guidPath !== undefined && titlePath !== undefined && guidPath !== titlePath) {
       guidTitleMismatches.push({

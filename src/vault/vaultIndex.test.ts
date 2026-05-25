@@ -227,6 +227,33 @@ describe('buildVaultIndex', () => {
     assert.equal(r.byNormalizedTitle.get('quoted title'), 'third.md');
   });
 
+  it('keeps same-title files in different folders as notebook-aware candidates', async () => {
+    const root = join(here, '__fixtures__', 'temp-folder-title-candidates');
+    await rm(root, { recursive: true, force: true });
+    await mkdir(join(root, 'Notebook A'), { recursive: true });
+    await mkdir(join(root, 'Notebook B'), { recursive: true });
+    await writeFile(join(root, 'Notebook A', 'Shared.md'), '# A\n', 'utf8');
+    await writeFile(join(root, 'Notebook B', 'shared.md'), '# B\n', 'utf8');
+
+    try {
+      const r = await buildVaultIndex(root);
+      assert.equal(r.ok, true);
+      if (!r.ok) {
+        return;
+      }
+      assert.equal(r.byNormalizedTitle.get('shared'), undefined);
+      assert.deepEqual(
+        r.byNormalizedTitleCandidates
+          .get('shared')
+          ?.map((c) => c.path)
+          .sort(),
+        ['Notebook A/Shared.md', 'Notebook B/shared.md'],
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('indexes evernote-guid from frontmatter', async () => {
     const root = join(here, '__fixtures__', 'temp-guid-index');
     await rm(root, { recursive: true, force: true });

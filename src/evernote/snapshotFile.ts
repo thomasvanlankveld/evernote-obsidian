@@ -1,5 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { type EvernoteNoteSnapshot, type NoteRecord, normalizeEvernoteGuid } from './noteRecord.ts';
+import {
+  type EvernoteNoteSnapshot,
+  type NoteRecord,
+  type NoteRecordNotebook,
+  normalizeEvernoteGuid,
+} from './noteRecord.ts';
 
 export function buildSnapshotEnvelope(host: string, notes: NoteRecord[]): EvernoteNoteSnapshot {
   return {
@@ -42,6 +47,7 @@ export function parseSnapshotJson(raw: string): EvernoteNoteSnapshot {
       guid: normalizeEvernoteGuid(r.guid),
       title: r.title,
       updated: r.updated,
+      ...parseOptionalNotebook(r.notebook),
     });
   }
   return {
@@ -63,4 +69,28 @@ export async function writeSnapshotFile(
 ): Promise<void> {
   const body = `${JSON.stringify(snapshot, null, 2)}\n`;
   await writeFile(path, body, 'utf8');
+}
+
+function parseOptionalNotebook(value: unknown): { notebook?: NoteRecordNotebook | undefined } {
+  if (value === undefined) {
+    return {};
+  }
+  if (!value || typeof value !== 'object') {
+    throw new Error('snapshot: note notebook must be an object when present');
+  }
+  const notebook = value as Record<string, unknown>;
+  if (typeof notebook.name !== 'string' || notebook.name.trim() === '') {
+    throw new Error('snapshot: note notebook needs name (string)');
+  }
+  if (notebook.stack !== undefined && typeof notebook.stack !== 'string') {
+    throw new Error('snapshot: note notebook stack must be a string when present');
+  }
+  return {
+    notebook: {
+      name: notebook.name,
+      ...(typeof notebook.stack === 'string' && notebook.stack.trim() !== ''
+        ? { stack: notebook.stack }
+        : {}),
+    },
+  };
 }

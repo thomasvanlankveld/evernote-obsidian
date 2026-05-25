@@ -161,6 +161,7 @@ export async function runGuidBackfill(
       index.entries.map((e) => e.path),
       index.byEvernoteGuid,
       pathToEvernoteGuid,
+      index.byNormalizedTitleCandidates,
     );
 
     emitStepProgress(invoke, 'guid-backfill: correlating snapshot…');

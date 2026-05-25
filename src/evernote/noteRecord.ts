@@ -3,6 +3,12 @@ export function normalizeEvernoteGuid(guid: string): string {
   return guid.toLowerCase();
 }
 
+export interface NoteRecordNotebook {
+  name: string;
+  /** Evernote notebook stack, when present in evernote-backup. */
+  stack?: string | undefined;
+}
+
 /**
  * Minimal Evernote note metadata for title ↔ vault correlation (Phase 3+).
  * Content is not stored in the snapshot.
@@ -20,6 +26,11 @@ export interface NoteRecord {
    * is only stored inside Python-pickled `raw_note` blobs in that database.
    */
   updated: string;
+  /**
+   * Optional source notebook metadata. When present, correlate can use the
+   * imported vault folder path to disambiguate notes with the same title.
+   */
+  notebook?: NoteRecordNotebook | undefined;
 }
 
 /** On-disk JSON envelope for idempotent pipeline steps and rate-limit friendly reruns. */

@@ -248,6 +248,7 @@ export async function runCorrelate(
       index.entries.map((e) => e.path),
       index.byEvernoteGuid,
       pathToEvernoteGuid,
+      index.byNormalizedTitleCandidates,
     );
     emitStepProgress(
       invoke,
