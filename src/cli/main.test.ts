@@ -1086,7 +1086,8 @@ describe('cli main', () => {
       assert.match(err(), /evernote-obsidian run/);
       assert.match(err(), /✗ correlate \(vault matching\)/);
       assert.match(err(), /Evernote note.*unmatched/);
-      assert.match(err(), /details: .*correlate-report\.json/);
+      assert.match(err(), /report: .*correlate-report\.md/);
+      assert.match(err(), /JSON:\s+.*correlate-report\.json/);
       assert.match(err(), /Run failed at correlate/);
       assert.doesNotMatch(err(), /"ok":\s*false/, 'no duplicate correlate failure JSON on stderr');
       const correlateReportFile = JSON.parse(await readFile(reportPath, 'utf8')) as {
