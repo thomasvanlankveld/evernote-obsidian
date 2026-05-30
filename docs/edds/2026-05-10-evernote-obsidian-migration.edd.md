@@ -1,7 +1,10 @@
 # EDD: Evernote → Obsidian link repair
 
-**Status:** Draft  
-**Last updated:** 2026-05-24 (correlate + CLI sync; architecture diagram clarifies `run` vs step-by-step)
+**Status:** Completed  
+**Last updated:** 2026-05-30 (marked complete; CLI architecture superseded — see below)  
+**Active planning:** [Run-centric CLI EDD](./2026-05-30-run-centric-cli.edd.md) ([#87](https://github.com/thomasvanlankveld/evernote-obsidian/issues/87))
+
+> **Supersedes (partial):** §4 *High-level architecture* and command-first CLI framing are replaced by the [run-centric EDD](./2026-05-30-run-centric-cli.edd.md). **Phases 2–6 implementation notes** in this document remain the reference for correlation, link extraction, rewrite, and safety behavior.
 
 ## EDD phase completion (before you push / open a PR)
 
